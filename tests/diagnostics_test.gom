@@ -13,9 +13,13 @@ use utf8::BytesUtf8;
 #[test]
 fn rejected_derive_inputs_report_precise_diagnostics() -> () {
     let module_root = testing::expect_ok(env::current_dir_structured(), "module directory");
-    let driver = env::var_structured("GOML_VERIFY_DRIVER").unwrap_or(
-        testing::expect_ok(fs::canonicalize("../../stage2/bin/goml"), "driver"),
-    );
+    let driver = match env::var_structured("GOML_VERIFY_DRIVER") {
+        Result::Ok(value) => value,
+        Result::Err(_) => testing::expect_ok(
+            fs::canonicalize("../../goml-dev/stage2/bin/goml"),
+            "driver",
+        ),
+    };
     let source = testing::expect_ok(
         fs::read_file_structured("tests/data/diagnostics.jsonl"),
         "diagnostic fixtures",
