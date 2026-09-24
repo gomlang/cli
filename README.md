@@ -216,7 +216,7 @@ before required-value checks. The library never exits the process or prints on
 the caller's behalf.
 
 ```sh
-just ecosystem-test cli
+(cd ../verification && just ecosystem-test cli)
 ```
 
 Tests exercise explicit schemas, clusters, terminators, duplicate/missing values,
