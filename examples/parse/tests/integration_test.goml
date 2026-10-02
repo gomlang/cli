@@ -72,3 +72,16 @@ fn erased_schema_arguments_survive_forwarding_and_function_values() -> () {
     let value: string = testing::expect_ok(matches.value("label"), "label");
     testing::assert_eq(value, "ok");
 }
+
+#[test]
+fn derived_schemas_generate_completion_across_dependency_boundary() -> () {
+    for shell in Vec::from_array([cli::Shell::Bash, cli::Shell::Zsh, cli::Shell::Fish]) {
+        let script = testing::expect_ok(
+            forwarded_schema::[Alternate]().completion_script(shell),
+            "derived completion",
+        );
+        testing::assert(script.contains("--label"));
+        testing::assert(script.contains("alternate"));
+        testing::assert(!script.contains("--input"));
+    }
+}

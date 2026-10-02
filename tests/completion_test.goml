@@ -1,0 +1,266 @@
+package tests;
+
+use ecosystem::cli;
+use std::env;
+use std::fs;
+use std::path;
+use std::process;
+use std::testing;
+use std::time;
+use std::utf8;
+use utf8::BytesUtf8;
+
+fn completion_command() -> cli::Command {
+    cli::Command::new("app").alias("ap").version("1").arg(
+        cli::Argument::counter("verbose").short('v').global(true),
+    ).arg(
+        cli::Argument::new("mode").short('m').alias("style").global(true).possible_values(
+            Vec::from_array(
+                [
+                    "fast",
+                    "safe",
+                    "two words",
+                    "quo'te",
+                    "$HOME",
+                    "$(touch injected)",
+                    "`touch injected`",
+                    "back\\slash",
+                    "[wild]*?",
+                ],
+            ),
+        ),
+    ).arg(cli::Argument::flag("root-only")).arg(cli::Argument::flag("star").short('*')).arg(
+        cli::Argument::new("quoted").short('\'').possible_values(Vec::from_array(["quoted"])),
+    ).arg(
+        cli::Argument::new("root-value").positional(0).possible_values(
+            Vec::from_array(["root-file"]),
+        ),
+    ).subcommand(
+        cli::Command::new("run").alias("r").arg(cli::Argument::flag("force").short('f')).arg(
+            cli::Argument::new("target").positional(0).possible_values(
+                Vec::from_array(["first", "fresh"]),
+            ),
+        ).arg(
+            cli::Argument::new("extra").positional(1).multiple(true).possible_values(
+                Vec::from_array(["second", "several"]),
+            ),
+        ).subcommand(cli::Command::new("deep").alias("d").arg(cli::Argument::flag("leaf"))),
+    )
+}
+
+fn completion_shell_name(shell: cli::Shell) -> string {
+    match shell {
+        cli::Shell::Bash => "bash",
+        cli::Shell::Zsh => "zsh",
+        cli::Shell::Fish => env::var_structured("GOML_CLI_TEST_FISH").unwrap_or("fish"),
+    }
+}
+
+fn completion_run(shell: cli::Shell, arguments: Vec[string], directory: string) -> string {
+    let output = testing::expect_ok(
+        process::Command::new(completion_shell_name(shell)).args(arguments).current_dir(directory).output_timeout_structured(
+            time::Duration::from_seconds(10),
+        ),
+        "completion shell process",
+    );
+    let stdout = testing::expect_ok(output.stdout().to_string_utf8(), "shell stdout");
+    let stderr = testing::expect_ok(output.stderr().to_string_utf8(), "shell stderr");
+    if !output.status().success() || stderr != "" {
+        testing::fail("completion shell failed: " + stdout + stderr);
+    }
+    stdout
+}
+
+fn completion_candidates(shell: cli::Shell, script: string, words: Vec[string], directory: string) -> Vec[
+    string,
+] {
+    let harness = match shell {
+        cli::Shell::Bash => r#"source "$1"
+shift
+COMP_WORDS=("$@")
+COMP_CWORD=$((${#COMP_WORDS[@]} - 1))
+_goml_cli_97_112_112
+for value in "${COMPREPLY[@]}"; do printf '%s\n' "$value"; done
+"#,
+        cli::Shell::Zsh => r#"compdef() { :; }
+compadd() { shift; for value in "$@"; do printf '%s\n' "$value"; done; }
+source "$1"
+shift
+words=("$@")
+CURRENT=${#words[@]}
+_goml_cli_97_112_112
+"#,
+        cli::Shell::Fish => r#"source "$argv[1]"
+set -e argv[1]
+set -l cur "$argv[-1]"
+set -e argv[-1]
+set -e argv[1]
+_goml_cli_97_112_112_engine "$cur" $argv
+"#,
+    };
+    let args = Vec::from_array(["-c", harness]);
+    if shell != cli::Shell::Fish {
+        args.push("completion-test");
+    }
+    args.push(script);
+    args.extend(words);
+    let output = completion_run(shell, args, directory);
+    if output == "" {
+        return Vec::new()
+    }
+    let lines = output.split("\n");
+    lines.slice(0, lines.len() - 1).to_vec()
+}
+
+#[test]
+fn completion_scripts_run_in_real_shells() -> () {
+    let directory = path::join(
+        testing::expect_ok(env::current_dir_structured(), "current directory"),
+        "_artifact/completion-shell-tests",
+    );
+    testing::assert_ok(fs::create_dir_all(directory));
+    defer {
+        testing::assert_ok(fs::remove_dir_all(directory));
+    };
+    let cases = Vec::from_array(
+        [
+            (Vec::from_array(["app", "r"]), Vec::from_array(["r", "run", "root-file"])),
+            (Vec::from_array(["app", "r", "--f"]), Vec::from_array(["--force"])),
+            (Vec::from_array(["app", "r", "d", "--l"]), Vec::from_array(["--leaf"])),
+            (Vec::from_array(["ap", "run", "deep", "--st"]), Vec::from_array(["--style"])),
+            (Vec::from_array(["app", "run", "--root"]), Vec::new()),
+            (Vec::from_array(["app", "--mode", "f"]), Vec::from_array(["fast"])),
+            (Vec::from_array(["app", "--mode=sa"]), Vec::from_array(["--mode=safe"])),
+            (Vec::from_array(["app", "--style", "sa"]), Vec::from_array(["safe"])),
+            (Vec::from_array(["app", "-vvm", "sa"]), Vec::from_array(["safe"])),
+            (Vec::from_array(["app", "-vvmf"]), Vec::from_array(["-vvmfast"])),
+            (Vec::from_array(["app", "--mode", "run", "--root"]), Vec::from_array(["--root-only"])),
+            (Vec::from_array(["app", "--mode=run", "r", "--f"]), Vec::from_array(["--force"])),
+            (Vec::from_array(["app", "-mrun", "r", "--f"]), Vec::from_array(["--force"])),
+            (Vec::from_array(["app", "run", "f"]), Vec::from_array(["first", "fresh"])),
+            (Vec::from_array(["app", "run", "first", "s"]), Vec::from_array(["second", "several"])),
+            (
+                Vec::from_array(["app", "run", "first", "second", "s"]),
+                Vec::from_array(["second", "several"]),
+            ),
+            (Vec::from_array(["app", "--", "r"]), Vec::from_array(["root-file"])),
+            (Vec::from_array(["app", "--", "run", "--"]), Vec::new()),
+            (Vec::from_array(["app", "run", "--", "f"]), Vec::from_array(["first", "fresh"])),
+            (Vec::from_array(["app", "--mode", "--"]), Vec::new()),
+            (Vec::from_array(["app", "--bad", "r"]), Vec::new()),
+            (Vec::from_array(["app", "--help", "r"]), Vec::new()),
+            (Vec::from_array(["app", "--mode", "two"]), Vec::from_array(["two words"])),
+            (Vec::from_array(["app", "--mode", "quo"]), Vec::from_array(["quo'te"])),
+            (
+                Vec::from_array(["app", "--mode", "$"]),
+                Vec::from_array(["$HOME", "$(touch injected)"]),
+            ),
+            (Vec::from_array(["app", "--mode", "`"]), Vec::from_array(["`touch injected`"])),
+            (Vec::from_array(["app", "--mode", "back"]), Vec::from_array(["back\\slash"])),
+            (Vec::from_array(["app", "--mode", "[wild]"]), Vec::from_array(["[wild]*?"])),
+        ],
+    );
+    for shell in Vec::from_array([cli::Shell::Bash, cli::Shell::Zsh, cli::Shell::Fish]) {
+        let script = path::join(directory, "completion-script");
+        testing::assert_ok(
+            fs::write_file_structured(
+                script,
+                testing::expect_ok(
+                    completion_command().completion_script(shell),
+                    "completion generation",
+                ),
+            ),
+        );
+        completion_run(shell, Vec::from_array(["-n", script]), directory);
+        for (words, expected) in cases {
+            let actual = completion_candidates(shell, script, words, directory);
+            if actual != expected {
+                testing::fail(
+                    completion_shell_name(shell) + " " + words.join("|") + " expected ["
+                        + expected.join("|")
+                        + "] got ["
+                        + actual.join("|")
+                        + "]",
+                );
+            }
+        }
+        testing::assert(!fs::is_file(path::join(directory, "injected")));
+        if shell == cli::Shell::Bash {
+            testing::assert(
+                completion_candidates(
+                    shell,
+                    script,
+                    Vec::from_array(["app", "--mode", "=", "sa"]),
+                    directory,
+                )
+                    == Vec::from_array(["safe"]),
+            );
+            testing::assert(
+                completion_candidates(
+                    shell,
+                    script,
+                    Vec::from_array(["app", "--mode", "=", "run", "r", "--f"]),
+                    directory,
+                )
+                    == Vec::from_array(["--force"]),
+            );
+        }
+        if shell == cli::Shell::Fish {
+            let output = completion_run(
+                shell,
+                Vec::from_array(["-c", "source \"$argv[1]\"; complete -C 'app run --f'", script]),
+                directory,
+            );
+            testing::assert_eq(output, "--force\n");
+            let values = completion_run(
+                shell,
+                Vec::from_array(["-c", "source \"$argv[1]\"; complete -C 'app --mode '", script]),
+                directory,
+            );
+            let quoted = completion_run(
+                shell,
+                Vec::from_array(
+                    ["-c", "source \"$argv[1]\"; complete -C \"app --mode \\\"two\"", script],
+                ),
+                directory,
+            );
+            testing::assert_eq(quoted, "two words\n");
+            testing::assert(values.contains("fast\n"));
+            testing::assert(values.contains("two words\n"));
+            testing::assert(values.contains("$(touch injected)\n"));
+            testing::assert(!fs::is_file(path::join(directory, "injected")));
+        }
+    }
+}
+
+#[test]
+fn completion_generation_validates_schemas_and_protocol_values() -> () {
+    for shell in Vec::from_array([cli::Shell::Bash, cli::Shell::Zsh, cli::Shell::Fish]) {
+        let invalid = cli::Command::new("$(touch injected)");
+        testing::assert_eq(
+            testing::expect_err(invalid.completion_script(shell), "invalid name").kind,
+            cli::ErrorKind::InvalidSchema,
+        );
+        for value in Vec::from_array(
+            [
+                "line\nbreak",
+                "tab\tvalue",
+                "carriage\rreturn",
+                "zero" + char_from_u32(0).unwrap_or('_').to_string() + "byte",
+            ],
+        ) {
+            let schema = cli::Command::new("app").arg(
+                cli::Argument::new("mode").possible_values(Vec::from_array([value])),
+            );
+            testing::assert_ok(schema.validate());
+            testing::assert_eq(
+                testing::expect_err(schema.completion_script(shell), "protocol value").kind,
+                cli::ErrorKind::InvalidSchema,
+            );
+        }
+        let collision = cli::Command::new("app").arg(cli::Argument::flag("global").global(true)).subcommand(
+            cli::Command::new("run").arg(cli::Argument::flag("global")),
+        );
+        testing::assert_err(collision.completion_script(shell));
+    }
+}
