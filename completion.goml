@@ -58,11 +58,11 @@ fn completion_validate(command: Command) -> Result[(), Error] {
         for value in argument.choices {
             for index in 0..value.byte_len() {
                 let byte = value.byte_get(index);
-                if byte == 0 || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+                if byte < 32 || byte == 127 {
                     return Result::Err(
                         problem(
                             ErrorKind::InvalidSchema,
-                            "completion choices cannot contain NUL, newline, carriage return or tab",
+                            "completion choices cannot contain ASCII control characters",
                         ),
                     )
                 }

@@ -107,7 +107,8 @@ fn completion_bourne(name: string, nodes: Vec[CompletionNode], shell: Shell) -> 
     if shell == Shell::Bash {
         result += completion_bash_wrapper().replace("__goml", name);
         for spelling in nodes[0].command.aliases.copy().pushed(nodes[0].command.name) {
-            result += "complete -F " + name + " " + completion_quote(spelling, shell) + "\n";
+            result += "complete -o noquote -F " + name + " " + completion_quote(spelling, shell)
+                + "\n";
         }
     } else {
         result += completion_zsh_wrapper().replace("__goml", name);
@@ -121,7 +122,32 @@ fn completion_bourne(name: string, nodes: Vec[CompletionNode], shell: Shell) -> 
 }
 
 fn completion_bourne_engine() -> string {
-    r#"__goml_offer() {
+    r#"__goml_decode() {
+  local input="$1" index=0 char next quote="${2-}"
+  decoded=
+  while (( index < ${#input} )); do
+    char="${input:$index:1}"
+    index=$((index + 1))
+    if [[ "$quote" == "'" ]]; then
+      if [[ "$char" == "'" ]]; then quote=; else decoded+="$char"; fi
+    elif [[ "$char" == '\' && "$quote" != "'" ]]; then
+      next="${input:$index:1}"
+      if [[ -z "$quote" || "$next" == '$' || "$next" == '\' || "$next" == '"' || "$next" == '`' ]]; then
+        decoded+="$next"
+        index=$((index + 1))
+      else
+        decoded+="$char"
+      fi
+    elif [[ "$char" == '"' ]]; then
+      if [[ "$quote" == '"' ]]; then quote=; else quote='"'; fi
+    elif [[ "$char" == "'" && -z "$quote" ]]; then
+      quote="'"
+    else
+      decoded+="$char"
+    fi
+  done
+}
+__goml_offer() {
   if [[ "$1" == "$cur"* ]]; then
     candidates+=("$insert$1")
   fi
@@ -215,41 +241,75 @@ __goml_engine() {
 }
 
 fn completion_bash_wrapper() -> string {
-    r#"__goml() {
-  local current="${COMP_WORDS[COMP_CWORD]}" strip= word index=0 last= before_last= length=0
-  local -a candidates=() previous=() normalized=()
-  if (( COMP_CWORD > 1 )); then
-    previous=("${COMP_WORDS[@]:1:COMP_CWORD-1}")
-  fi
-  length=${#previous[@]}
-  (( length > 0 )) && last="${previous[length-1]}"
-  (( length > 1 )) && before_last="${previous[length-2]}"
-  if [[ "$current" == = && "$last" == --* ]]; then
-    strip="$last="
-    current="$strip"
-    previous=("${previous[@]:0:length-1}")
-  elif [[ "$last" == = && "$before_last" == --* ]]; then
-    strip="$before_last="
-    current="$strip$current"
-    previous=("${previous[@]:0:length-2}")
-  fi
-  while (( index < ${#previous[@]} )); do
-    word="${previous[index]}"
-    if [[ "$word" == --* && "${previous[index+1]-}" == = ]]; then
-      normalized+=("$word=${previous[index+2]-}")
-      index=$((index + 3))
+    r#"__goml_line() {
+  local input="${COMP_LINE:0:COMP_POINT}" index=0 char next started=0
+  token= quote= tokens=()
+  while (( index < ${#input} )); do
+    char="${input:$index:1}"
+    index=$((index + 1))
+    if [[ "$quote" == "'" ]]; then
+      if [[ "$char" == "'" ]]; then quote=; else token+="$char"; fi
+    elif [[ "$char" == '\' ]]; then
+      next="${input:$index:1}"
+      if [[ -z "$quote" || "$next" == '$' || "$next" == '\' || "$next" == '"' || "$next" == '`' ]]; then
+        token+="$next"
+        index=$((index + 1))
+      else
+        token+="$char"
+      fi
+      started=1
+    elif [[ "$char" == '"' ]]; then
+      if [[ "$quote" == '"' ]]; then quote=; else quote='"'; fi
+      started=1
+    elif [[ "$char" == "'" && -z "$quote" ]]; then
+      quote="'"
+      started=1
+    elif [[ -z "$quote" && ( "$char" == ' ' || "$char" == $'\t' || "$char" == $'\n' ) ]]; then
+      if [[ "$started" == 1 ]]; then tokens+=("$token"); fi
+      token= started=0
+    elif [[ -z "$quote" && ( "$char" == ';' || "$char" == '|' || "$char" == '&' || "$char" == '(' || "$char" == ')' ) ]]; then
+      tokens=() token= started=0
     else
-      normalized+=("$word")
-      index=$((index + 1))
+      token+="$char"
+      started=1
     fi
   done
-  __goml_engine "$current" "${normalized[@]}"
+}
+__goml() {
+  local token quote decoded fragment strip word index=0 escaped char
+  local -a candidates=() tokens=() previous=()
+  __goml_line
+  while (( index < ${#tokens[@]} )) && [[ "${tokens[index]}" != "$1" ]]; do
+    index=$((index + 1))
+  done
+  index=$((index + 1))
+  previous=("${tokens[@]:index}")
+  __goml_decode "$2" "$quote"
+  fragment="$decoded"
+  (( ${#fragment} > ${#token} )) && return 0
+  strip="${token:0:${#token}-${#fragment}}"
+  __goml_engine "$token" "${previous[@]}"
   COMPREPLY=()
   for word in "${candidates[@]}"; do
-    if [[ -n "$strip" ]]; then
-      word="${word#"$strip"}"
-    fi
-    COMPREPLY+=("$word")
+    word="${word#"$strip"}"
+    escaped=
+    for (( index=0; index<${#word}; index++ )); do
+      char="${word:index:1}"
+      if [[ -z "$quote" ]]; then
+        case "$char" in
+          ' '|'!'|'#'|'$'|'&'|'('|')'|'*'|';'|'<'|'>'|'?'|'['|']'|'{'|'}'|'|'|'~'|'\'|'"'|"'"|'`') escaped+="\\$char" ;;
+          *) escaped+="$char" ;;
+        esac
+      elif [[ "$quote" == "'" && "$char" == "'" ]]; then
+        escaped+="'\\''"
+      elif [[ "$quote" == '"' && ( "$char" == '$' || "$char" == '\' || "$char" == '"' || "$char" == '`' ) ]]; then
+        escaped+="\\$char"
+      else
+        escaped+="$char"
+      fi
+    done
+    [[ -z "$word" && -z "$quote" ]] && escaped="''"
+    COMPREPLY+=("$escaped")
   done
 }
 "#
@@ -259,10 +319,15 @@ fn completion_zsh_wrapper() -> string {
     r#"__goml() {
   emulate -L zsh
   local -a candidates=() previous=()
-  if (( CURRENT > 2 )); then
-    previous=("${words[@]:1:$((CURRENT-2))}")
-  fi
-  __goml_engine "${words[CURRENT]}" "${previous[@]}"
+  local word index decoded
+  for (( index=2; index<CURRENT; index++ )); do
+    word="${words[index]}"
+    __goml_decode "$word"
+    previous+=("$decoded")
+  done
+  word="${words[CURRENT]}"
+  __goml_decode "$word"
+  __goml_engine "$decoded" "${previous[@]}"
   if (( ${#candidates[@]} )); then
     compadd -- "${candidates[@]}"
   fi

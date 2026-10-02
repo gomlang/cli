@@ -235,12 +235,17 @@ required arguments or valid values in earlier words. Free-form arguments without
 filesystem candidates or type-based suggestions; derived fields can declare
 `#[arg(choices = "fast|safe")]` explicitly. Schema descriptions are not included
 in completion output. Generation returns `InvalidSchema` for invalid schemas or
-choices containing NUL, newline, carriage return or tab, which cannot be carried
-consistently by the shells' line-oriented candidate interfaces. Spaces, quotes,
+choices containing ASCII control characters (including DEL), which cannot be
+carried safely by interactive shells and their line-oriented candidate interfaces.
+Spaces, quotes,
 backslashes and shell metacharacters in choices remain literal text. Generated
-scripts do not use `eval` or execute schema strings.
+scripts do not use `eval` or execute schema strings. Bash insertion escapes shell
+metacharacters according to the current quoting context without treating choices
+as filenames, so an existing directory cannot change a candidate by appending
+`/`. Ordinary single/double quotes and backslash escapes in command words are
+recognized; completion does not evaluate variable or command substitutions.
 
-Requires Bash 4+, Zsh 5+, or Fish 3.4+. With the `examples/completions` schema
+Requires Bash 4.3+, Zsh 5+, or Fish 3.4+. With the `examples/completions` schema
 (named `app`), generate and load a script explicitly:
 
 ```sh
@@ -270,7 +275,11 @@ Regenerate scripts after changing the schema. Applications may expose generation
 through their own command or installer; the library does not reserve a completion
 subcommand or invoke a shell automatically. Real Bash, Zsh and Fish tests cover
 candidate selection and escaping. They require all three executables on `PATH`;
-`GOML_CLI_TEST_FISH` can select a Fish executable explicitly.
+`GOML_CLI_TEST_FISH` can select a Fish executable explicitly. Python 3 and Linux
+PTYs are also required for acceptance tests that press Tab and Enter, compare the
+executed argument vector and check that schema text cannot create side effects.
+Those tests cover quoting, shell metacharacters, Unicode, directory-name collisions
+and completion with words after the cursor.
 
 ## Errors and validation
 
