@@ -106,7 +106,7 @@ fn false_environment_flags_participate_in_constraints_but_defaults_do_not() -> (
     let mut invalid = cli::Argument::flag("flag").multiple(true);
     invalid.defaults = Vec::from_array(["true", "false"]);
     testing::assert_err(cli::Command::new("app").arg(invalid).validate());
-    testing::assert_err(
+    testing::assert_ok(
         cli::Command::new("app").arg(cli::Argument::counter("count").env("COUNT")).validate(),
     );
 }

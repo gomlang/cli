@@ -1,0 +1,100 @@
+package tests;
+
+use ecosystem::cli;
+use cli::{Args};
+use std::testing;
+
+#[derive(Args)]
+struct CounterOptions {
+    #[arg(count, short = "v", default = "5", env = "VERBOSE")]
+    verbose: isize,
+}
+
+#[test]
+fn counter_fallbacks_are_compact_and_explicit_occurrences_replace_them() -> () {
+    let default: CounterOptions = testing::expect_ok(cli::parse(Vec::new()), "derived default");
+    testing::assert_eq(default.verbose, 5);
+    let environment: CounterOptions = testing::expect_ok(
+        cli::parse_with_env(Vec::new(), |_| Option::Some("0007")),
+        "derived env",
+    );
+    testing::assert_eq(environment.verbose, 7);
+    let explicit: CounterOptions = testing::expect_ok(
+        cli::parse_with_env(Vec::from_array(["-vv"]), |_| Option::Some("bad")),
+        "explicit occurrences",
+    );
+    testing::assert_eq(explicit.verbose, 2);
+    let command = cli::schema::[CounterOptions]();
+    let huge = testing::expect_ok(
+        command.parse_with_env(Vec::new(), |_| Option::Some("9223372036854775807")),
+        "compact maximum",
+    );
+    testing::assert_eq(huge.count("verbose"), 9223372036854775807);
+    testing::assert_eq(huge.raw("verbose").len(), 1);
+    testing::assert_eq(huge.raw("verbose")[0], "9223372036854775807");
+    let explicit_matches = testing::expect_ok(
+        command.parse(Vec::from_array(["-vv"])),
+        "explicit raw",
+    );
+    testing::assert_eq(explicit_matches.raw("verbose").len(), 2);
+    testing::assert_eq(explicit_matches.raw("verbose")[0], "true");
+    for invalid in Vec::from_array(
+        ["", "-1", "+1", "1 ", "1_0", "0x10", "true", "9223372036854775808"],
+    ) {
+        testing::assert_eq(
+            testing::expect_err(
+                command.parse_with_env(Vec::new(), |_| Option::Some(invalid)),
+                "invalid env count",
+            ).kind,
+            cli::ErrorKind::InvalidValue,
+        );
+        testing::assert_eq(
+            testing::expect_err(
+                cli::Command::new("app").arg(cli::Argument::counter("v").default_value(invalid)).validate(),
+                "invalid default count",
+            ).kind,
+            cli::ErrorKind::InvalidSchema,
+        );
+    }
+}
+
+#[test]
+fn counter_globals_zero_provenance_and_groups_agree() -> () {
+    let root = cli::Command::new("app").arg(
+        cli::Argument::counter("verbose").short('v').global(true).env("VERBOSE").default_value("4"),
+    ).subcommand(cli::Command::new("run").subcommand(cli::Command::new("deep")));
+    let args = Vec::from_array(["run", "deep"]);
+    let matches = testing::expect_ok(root.parse_with_env(args, |_| Option::Some("0")), "zero env");
+    let child = testing::expect_some(matches.subcommand(), "child");
+    let leaf = testing::expect_some(child.subcommand(), "leaf");
+    for value in Vec::from_array([matches, child, leaf]) {
+        testing::assert(value.contains("verbose") && value.was_provided("verbose"));
+        testing::assert_eq(value.count("verbose"), 0);
+        testing::assert_eq(value.raw("verbose")[0], "0");
+    }
+    let defaults = testing::expect_ok(root.parse(args), "global default");
+    testing::assert_eq(defaults.count("verbose"), 4);
+    testing::assert(!defaults.was_provided("verbose"));
+    let explicit = testing::expect_ok(
+        root.parse_with_env(
+            Vec::from_array(["-v", "run", "-v", "deep", "-v"]),
+            |_| Option::Some("bad"),
+        ),
+        "globals explicit",
+    );
+    testing::assert_eq(explicit.count("verbose"), 3);
+    let required = cli::Command::new("app").arg(
+        cli::Argument::counter("v").env("V").default_value("0"),
+    ).group(cli::ArgGroup::new("choice", Vec::from_array(["v"])).required(true));
+    testing::assert_err(required.parse(Vec::new()));
+    testing::assert_ok(required.parse_with_env(Vec::new(), |_| Option::Some("0")));
+    let conflicting = cli::Command::new("app").arg(
+        cli::Argument::counter("v").env("V").conflicts_with(Vec::from_array(["quiet"])),
+    ).arg(cli::Argument::flag("quiet"));
+    testing::assert_err(
+        conflicting.parse_with_env(Vec::from_array(["--quiet"]), |_| Option::Some("0")),
+    );
+    let mut multiple = cli::Argument::counter("v");
+    multiple.defaults = Vec::from_array(["1", "2"]);
+    testing::assert_err(cli::Command::new("app").arg(multiple).validate());
+}
