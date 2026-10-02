@@ -1,0 +1,271 @@
+package cli;
+
+fn completion_bourne(name: string, nodes: Vec[CompletionNode], shell: Shell) -> string {
+    let mut result = name + "_option() {\n  kind= key=\n  case \"$state:$1\" in\n";
+    for index in 0..nodes.len() {
+        let command = nodes[index].command;
+        for spelling in Vec::from_array(["--help", "-h"]) {
+            result += "    " + completion_quote(index.to_string() + ":" + spelling, shell)
+                + ") kind=stop ;;\n";
+        }
+        if command.version_value != "" {
+            for spelling in Vec::from_array(["--version", "-V"]) {
+                result += "    " + completion_quote(index.to_string() + ":" + spelling, shell)
+                    + ") kind=stop ;;\n";
+            }
+        }
+        for argument_index in 0..command.arguments.len() {
+            let argument = command.arguments[argument_index];
+            if argument.position.is_some() {
+                continue;
+            }
+            let key = index.to_string() + ":" + argument_index.to_string();
+            let kind = if argument.action == Action::Value {
+                "value"
+            } else {
+                "flag"
+            };
+            for spelling in completion_spellings(argument) {
+                result += "    " + completion_quote(index.to_string() + ":" + spelling, shell)
+                    + ") kind="
+                    + kind
+                    + " key="
+                    + completion_quote(key, shell)
+                    + " ;;\n";
+            }
+        }
+    }
+    result += "  esac\n}\n" + name + "_child() {\n  child=0\n  case \"$state:$1\" in\n";
+    for index in 0..nodes.len() {
+        for (spelling, target) in nodes[index].children {
+            result += "    " + completion_quote(index.to_string() + ":" + spelling, shell)
+                + ") state="
+                + target.to_string()
+                + " position=0 child=1 ;;\n";
+        }
+    }
+    result += "  esac\n}\n" + name
+        + "_position() {\n  key= repeated=0\n  case \"$state:$position\" in\n";
+    for index in 0..nodes.len() {
+        for argument_index in 0..nodes[index].command.arguments.len() {
+            let argument = nodes[index].command.arguments[argument_index];
+            if let Some(position) = argument.position {
+                let repeated = if argument.repeated {
+                    "1"
+                } else {
+                    "0"
+                };
+                result += "    "
+                    + completion_quote(index.to_string() + ":" + position.to_string(), shell)
+                    + ") key="
+                    + completion_quote(index.to_string() + ":" + argument_index.to_string(), shell)
+                    + " repeated="
+                    + repeated
+                    + " ;;\n";
+            }
+        }
+    }
+    result += "  esac\n}\n" + name + "_values() {\n  case \"$key\" in\n";
+    for index in 0..nodes.len() {
+        for argument_index in 0..nodes[index].command.arguments.len() {
+            let argument = nodes[index].command.arguments[argument_index];
+            if argument.choices.is_empty() {
+                continue;
+            }
+            result += "    "
+                + completion_quote(index.to_string() + ":" + argument_index.to_string(), shell)
+                + ")\n";
+            for choice in argument.choices {
+                result += "      " + name + "_offer " + completion_quote(choice, shell) + "\n";
+            }
+            result += "      ;;\n";
+        }
+    }
+    result += "  esac\n}\n" + name + "_names() {\n  case \"$state\" in\n";
+    for index in 0..nodes.len() {
+        let command = nodes[index].command;
+        let spellings = Vec::from_array(["--help", "-h"]);
+        if command.version_value != "" {
+            spellings.extend(Vec::from_array(["--version", "-V"]));
+        }
+        for argument in command.arguments {
+            if argument.position.is_none() {
+                spellings.extend(completion_spellings(argument));
+            }
+        }
+        for (spelling, _) in nodes[index].children {
+            spellings.push(spelling);
+        }
+        result += "    " + index.to_string() + ")\n";
+        for spelling in spellings {
+            result += "      " + name + "_offer " + completion_quote(spelling, shell) + "\n";
+        }
+        result += "      ;;\n";
+    }
+    result += "  esac\n}\n";
+    result += completion_bourne_engine().replace("__goml", name);
+    if shell == Shell::Bash {
+        result += completion_bash_wrapper().replace("__goml", name);
+        for spelling in nodes[0].command.aliases.copy().pushed(nodes[0].command.name) {
+            result += "complete -F " + name + " " + completion_quote(spelling, shell) + "\n";
+        }
+    } else {
+        result += completion_zsh_wrapper().replace("__goml", name);
+        result += "compdef " + name;
+        for spelling in nodes[0].command.aliases.copy().pushed(nodes[0].command.name) {
+            result += " " + completion_quote(spelling, shell);
+        }
+        result += "\n";
+    }
+    result
+}
+
+fn completion_bourne_engine() -> string {
+    r#"__goml_offer() {
+  if [[ "$1" == "$cur"* ]]; then
+    candidates+=("$insert$1")
+  fi
+}
+__goml_engine() {
+  local cur="$1" state=0 position=0 options=1 need= kind= key= repeated=0
+  local word rest short child=0 insert=
+  shift
+  for word in "$@"; do
+    if [[ -n "$need" ]]; then
+      [[ "$word" == --* ]] && return 0
+      need=
+      continue
+    fi
+    if [[ "$options" == 1 && "$word" == -- ]]; then
+      options=0
+      continue
+    fi
+    if [[ "$options" == 1 && "$word" == --* ]]; then
+      __goml_option "${word%%=*}"
+      [[ -z "$kind" || "$kind" == stop ]] && return 0
+      if [[ "$kind" == value ]]; then
+        [[ "$word" != *=* ]] && need="$key"
+      elif [[ "$word" == *=* ]]; then
+        return 0
+      fi
+      continue
+    fi
+    if [[ "$options" == 1 && "$word" == -?* ]]; then
+      rest="${word:1}"
+      while [[ -n "$rest" ]]; do
+        short="${rest:0:1}"
+        rest="${rest:1}"
+        __goml_option "-$short"
+        [[ -z "$kind" || "$kind" == stop ]] && return 0
+        if [[ "$kind" == value ]]; then
+          [[ -z "$rest" ]] && need="$key"
+          break
+        fi
+      done
+      continue
+    fi
+    if [[ "$options" == 1 ]]; then
+      __goml_child "$word"
+      [[ "$child" == 1 ]] && continue
+    fi
+    __goml_position
+    [[ -z "$key" ]] && return 0
+    [[ "$repeated" == 0 ]] && position=$((position + 1))
+  done
+  if [[ -n "$need" ]]; then
+    [[ "$cur" == --* ]] && return 0
+    key="$need"
+    __goml_values
+    return 0
+  fi
+  if [[ "$options" == 1 && "$cur" == --*=* ]]; then
+    __goml_option "${cur%%=*}"
+    if [[ "$kind" == value ]]; then
+      insert="${cur%%=*}="
+      cur="${cur#*=}"
+      __goml_values
+    fi
+    return 0
+  fi
+  if [[ "$options" == 1 && "$cur" == -?* && "$cur" != --* ]]; then
+    rest="${cur:1}"
+    insert=-
+    while [[ -n "$rest" ]]; do
+      short="${rest:0:1}"
+      rest="${rest:1}"
+      insert="$insert$short"
+      __goml_option "-$short"
+      if [[ "$kind" == value ]]; then
+        cur="$rest"
+        __goml_values
+        return 0
+      fi
+      [[ "$kind" != flag ]] && break
+    done
+    insert=
+  fi
+  if [[ "$options" == 1 ]]; then
+    __goml_names
+    [[ "$cur" == -?* ]] && return 0
+  fi
+  __goml_position
+  __goml_values
+}
+"#
+}
+
+fn completion_bash_wrapper() -> string {
+    r#"__goml() {
+  local current="${COMP_WORDS[COMP_CWORD]}" strip= word index=0 last= before_last= length=0
+  local -a candidates=() previous=() normalized=()
+  if (( COMP_CWORD > 1 )); then
+    previous=("${COMP_WORDS[@]:1:COMP_CWORD-1}")
+  fi
+  length=${#previous[@]}
+  (( length > 0 )) && last="${previous[length-1]}"
+  (( length > 1 )) && before_last="${previous[length-2]}"
+  if [[ "$current" == = && "$last" == --* ]]; then
+    strip="$last="
+    current="$strip"
+    previous=("${previous[@]:0:length-1}")
+  elif [[ "$last" == = && "$before_last" == --* ]]; then
+    strip="$before_last="
+    current="$strip$current"
+    previous=("${previous[@]:0:length-2}")
+  fi
+  while (( index < ${#previous[@]} )); do
+    word="${previous[index]}"
+    if [[ "$word" == --* && "${previous[index+1]-}" == = ]]; then
+      normalized+=("$word=${previous[index+2]-}")
+      index=$((index + 3))
+    else
+      normalized+=("$word")
+      index=$((index + 1))
+    fi
+  done
+  __goml_engine "$current" "${normalized[@]}"
+  COMPREPLY=()
+  for word in "${candidates[@]}"; do
+    if [[ -n "$strip" ]]; then
+      word="${word#"$strip"}"
+    fi
+    COMPREPLY+=("$word")
+  done
+}
+"#
+}
+
+fn completion_zsh_wrapper() -> string {
+    r#"__goml() {
+  emulate -L zsh
+  local -a candidates=() previous=()
+  if (( CURRENT > 2 )); then
+    previous=("${words[@]:1:$((CURRENT-2))}")
+  fi
+  __goml_engine "${words[CURRENT]}" "${previous[@]}"
+  if (( ${#candidates[@]} )); then
+    compadd -- "${candidates[@]}"
+  fi
+}
+"#
+}

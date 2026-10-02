@@ -208,6 +208,70 @@ schema function values work across dependencies with GoML 0.1.50.
 `TypedCommand[Options]` result for compatibility; its `command` field exposes
 the same schema.
 
+## Shell completion
+
+`Command.completion_script(Shell::Bash | Shell::Zsh | Shell::Fish)` validates the
+schema and returns a standalone completion script. It writes no files and does
+not modify shell configuration. Derived `Args` use the same API:
+
+```goml
+let script = cli::schema::[Options]().completion_script(cli::Shell::Bash)?;
+```
+
+Scripts support nested subcommands and aliases, inherited global options,
+long-option aliases, short flags and clusters, `--option=value`, attached short
+values such as `-mfast`, positional choices and a final repeated positional.
+An option awaiting a value completes its `possible_values` only, including when
+the previous word is a short cluster such as `-vvm`. Words consumed as option
+values do not select subcommands. `--` disables options and subcommands at the
+current command level; positional choices remain available. `--help` and the
+version options are offered where the parser supports them. Root command aliases
+register the same completion function for each executable spelling.
+
+Completion offers static schema candidates, not a second validation pass. It
+does not suppress already-used scalar options or enforce groups, conflicts,
+required arguments or valid values in earlier words. Free-form arguments without
+`possible_values` have no value candidates. There are no dynamic callbacks,
+filesystem candidates or type-based suggestions; derived fields can declare
+`#[arg(choices = "fast|safe")]` explicitly. Schema descriptions are not included
+in completion output. Generation returns `InvalidSchema` for invalid schemas or
+choices containing NUL, newline, carriage return or tab, which cannot be carried
+consistently by the shells' line-oriented candidate interfaces. Spaces, quotes,
+backslashes and shell metacharacters in choices remain literal text. Generated
+scripts do not use `eval` or execute schema strings.
+
+Requires Bash 4+, Zsh 5+, or Fish 3.4+. With the `examples/completions` schema
+(named `app`), generate and load a script explicitly:
+
+```sh
+goml run --example completions -- bash > app.bash
+source ./app.bash
+```
+
+For persistent Bash use, source that file from your own shell startup file. For
+Zsh, initialize completion before sourcing the generated script:
+
+```sh
+goml run --example completions -- zsh > app.zsh
+autoload -Uz compinit
+compinit
+source ./app.zsh
+```
+
+For Fish, install the generated file in its standard per-user completion path:
+
+```sh
+mkdir -p ~/.config/fish/completions
+goml run --example completions -- fish > ~/.config/fish/completions/app.fish
+```
+
+Use the application's executable name as its schema name and completion filename.
+Regenerate scripts after changing the schema. Applications may expose generation
+through their own command or installer; the library does not reserve a completion
+subcommand or invoke a shell automatically. Real Bash, Zsh and Fish tests cover
+candidate selection and escaping. They require all three executables on `PATH`;
+`GOML_CLI_TEST_FISH` can select a Fish executable explicitly.
+
 ## Errors and validation
 
 `Error` distinguishes `Help`, `Version`, `Usage`, `InvalidValue` and
@@ -229,13 +293,14 @@ inheritance and invalid schemas. The `examples/parse` example and its downstream
 exported derives, import aliases and generated-name hygiene;
 A GoML test checks 33 invalid derives through temporary downstream modules, using `std::process` to assert compiler exit status and precise diagnostics.
 
-Shell completion and flag/counter defaults or environment values remain future
-work. Schemas must form a finite command tree; recursive type definitions that
-would expand into an infinite command tree are unsupported.
+Flag/counter defaults and environment values remain future work. Schemas must
+form a finite command tree; recursive type definitions that would expand into an
+infinite command tree are unsupported.
 
 ## Development and examples
 
-Requires GoML 0.1.56 or newer. The `examples/parse/` example shares the root manifest. From the library root, run:
+Requires GoML 0.1.56 or newer. The `examples/parse/` and `examples/completions/`
+examples share the root manifest. From the library root, run:
 
 ```sh
 goml run --example parse

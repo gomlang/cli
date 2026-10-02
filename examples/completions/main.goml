@@ -1,0 +1,42 @@
+package main;
+
+use ecosystem::cli;
+use cli::Args;
+use std::env;
+use std::io;
+use std::process;
+
+#[derive(Args)]
+#[command(name = "app", about = "Example application")]
+struct Options {
+    #[arg(short = "m", choices = "fast|safe", default = "safe")]
+    mode: string,
+    #[arg(short = "v", count)]
+    verbose: isize,
+}
+
+fn main() -> () {
+    let arguments = env::args();
+    let selected = if arguments.len() > 1 {
+        arguments[1]
+    } else {
+        "bash"
+    };
+    let shell = match selected {
+        "bash" => cli::Shell::Bash,
+        "zsh" => cli::Shell::Zsh,
+        "fish" => cli::Shell::Fish,
+        _ => {
+            io::eprintln("expected bash, zsh or fish");
+            process::exit(2);
+            return
+        },
+    };
+    match cli::schema::[Options]().completion_script(shell) {
+        Ok(script) => io::print(script),
+        Err(error) => {
+            io::eprintln(error);
+            process::exit(1);
+        },
+    }
+}

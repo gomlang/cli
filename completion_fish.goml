@@ -1,0 +1,232 @@
+package cli;
+
+fn completion_fish_pattern(value: string) -> string {
+    completion_quote(
+        value.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?").replace("[", "\\["),
+        Shell::Fish,
+    )
+}
+
+fn completion_fish(name: string, nodes: Vec[CompletionNode]) -> string {
+    let shell = Shell::Fish;
+    let mut result = "function " + name + "_option\n  switch \"$argv[1]:$argv[2]\"\n";
+    for index in 0..nodes.len() {
+        let command = nodes[index].command;
+        let stops = Vec::from_array(["--help", "-h"]);
+        if command.version_value != "" {
+            stops.extend(Vec::from_array(["--version", "-V"]));
+        }
+        for spelling in stops {
+            result += "    case " + completion_fish_pattern(index.to_string() + ":" + spelling)
+                + "\n      printf '%s\\n' stop -\n";
+        }
+        for argument_index in 0..command.arguments.len() {
+            let argument = command.arguments[argument_index];
+            if argument.position.is_some() {
+                continue;
+            }
+            let key = index.to_string() + ":" + argument_index.to_string();
+            let kind = if argument.action == Action::Value {
+                "value"
+            } else {
+                "flag"
+            };
+            for spelling in completion_spellings(argument) {
+                result += "    case " + completion_fish_pattern(index.to_string() + ":" + spelling)
+                    + "\n      printf '%s\\n' "
+                    + kind
+                    + " "
+                    + completion_quote(key, shell)
+                    + "\n";
+            }
+        }
+    }
+    result += "  end\nend\nfunction " + name + "_child\n  switch \"$argv[1]:$argv[2]\"\n";
+    for index in 0..nodes.len() {
+        for (spelling, target) in nodes[index].children {
+            result += "    case " + completion_fish_pattern(index.to_string() + ":" + spelling)
+                + "\n      printf '%s\\n' "
+                + target.to_string()
+                + "\n";
+        }
+    }
+    result += "  end\nend\nfunction " + name + "_position\n  switch \"$argv[1]:$argv[2]\"\n";
+    for index in 0..nodes.len() {
+        for argument_index in 0..nodes[index].command.arguments.len() {
+            let argument = nodes[index].command.arguments[argument_index];
+            if let Some(position) = argument.position {
+                let repeated = if argument.repeated {
+                    "1"
+                } else {
+                    "0"
+                };
+                result += "    case "
+                    + completion_quote(index.to_string() + ":" + position.to_string(), shell)
+                    + "\n      printf '%s\\n' "
+                    + completion_quote(index.to_string() + ":" + argument_index.to_string(), shell)
+                    + " "
+                    + repeated
+                    + "\n";
+            }
+        }
+    }
+    result += "  end\nend\nfunction " + name + "_values\n  switch \"$argv[1]\"\n";
+    for index in 0..nodes.len() {
+        for argument_index in 0..nodes[index].command.arguments.len() {
+            let argument = nodes[index].command.arguments[argument_index];
+            if argument.choices.is_empty() {
+                continue;
+            }
+            result += "    case "
+                + completion_quote(index.to_string() + ":" + argument_index.to_string(), shell)
+                + "\n";
+            for choice in argument.choices {
+                result += "      " + name + "_offer " + completion_quote(choice, shell)
+                    + " \"$argv[2]\" \"$argv[3]\"\n";
+            }
+        }
+    }
+    result += "  end\nend\nfunction " + name + "_names\n  switch \"$argv[1]\"\n";
+    for index in 0..nodes.len() {
+        let command = nodes[index].command;
+        let spellings = Vec::from_array(["--help", "-h"]);
+        if command.version_value != "" {
+            spellings.extend(Vec::from_array(["--version", "-V"]));
+        }
+        for argument in command.arguments {
+            if argument.position.is_none() {
+                spellings.extend(completion_spellings(argument));
+            }
+        }
+        for (spelling, _) in nodes[index].children {
+            spellings.push(spelling);
+        }
+        result += "    case " + index.to_string() + "\n";
+        for spelling in spellings {
+            result += "      " + name + "_offer " + completion_quote(spelling, shell)
+                + " \"$argv[2]\" ''\n";
+        }
+    }
+    result += "  end\nend\n";
+    result += completion_fish_engine().replace("__goml", name);
+    for spelling in nodes[0].command.aliases.copy().pushed(nodes[0].command.name) {
+        result += "complete -c " + completion_quote(spelling, shell) + " -f -a "
+            + completion_quote("(" + name + ")", shell)
+            + "\n";
+    }
+    result
+}
+
+fn completion_fish_engine() -> string {
+    r#"function __goml_offer
+  set -l length (string length -- "$argv[2]")
+  if test "$(string sub -l "$length" -- "$argv[1]")" = "$argv[2]"
+    printf '%s\n' "$argv[3]$argv[1]"
+  end
+end
+function __goml_engine
+  set -l cur "$argv[1]"
+  set -l state 0
+  set -l position 0
+  set -l options 1
+  set -l need ''
+  set -l metadata
+  set -l rest
+  set -l short
+  set -l insert ''
+  for word in $argv[2..-1]
+    if test -n "$need"
+      string match -q -- '--*' "$word"; and return 0
+      set need ''
+      continue
+    end
+    if test "$options" = 1; and test "$word" = --
+      set options 0
+      continue
+    end
+    if test "$options" = 1; and string match -q -- '--*' "$word"
+      set metadata (__goml_option "$state" "$(string replace -r '=.*$' '' -- "$word")")
+      test (count $metadata) = 0; and return 0
+      test "$metadata[1]" = stop; and return 0
+      if test "$metadata[1]" = value
+        if not string match -q '*=*' -- "$word"
+          set need "$metadata[2]"
+        end
+      else if string match -q '*=*' -- "$word"
+        return 0
+      end
+      continue
+    end
+    if test "$options" = 1; and string match -q -- '-?*' "$word"
+      set rest "$(string sub -s 2 -- "$word")"
+      while test -n "$rest"
+        set short "$(string sub -l 1 -- "$rest")"
+        set rest "$(string sub -s 2 -- "$rest")"
+        set metadata (__goml_option "$state" "-$short")
+        test (count $metadata) = 0; and return 0
+        test "$metadata[1]" = stop; and return 0
+        if test "$metadata[1]" = value
+          test -z "$rest"; and set need "$metadata[2]"
+          break
+        end
+      end
+      continue
+    end
+    if test "$options" = 1
+      set metadata (__goml_child "$state" "$word")
+      if test (count $metadata) != 0
+        set state "$metadata[1]"
+        set position 0
+        continue
+      end
+    end
+    set metadata (__goml_position "$state" "$position")
+    test (count $metadata) = 0; and return 0
+    if test "$metadata[2]" = 0
+      set position (math "$position + 1")
+    end
+  end
+  if test -n "$need"
+    string match -q -- '--*' "$cur"; and return 0
+    __goml_values "$need" "$cur" ''
+    return 0
+  end
+  if test "$options" = 1; and string match -q -- '--*=*' "$cur"
+    set insert "$(string replace -r '=.*$' '' -- "$cur")"
+    set metadata (__goml_option "$state" "$insert")
+    if test (count $metadata) != 0; and test "$metadata[1]" = value
+      __goml_values "$metadata[2]" "$(string replace -r '^[^=]*=' '' -- "$cur")" "$insert="
+    end
+    return 0
+  end
+  if test "$options" = 1; and string match -q -- '-?*' "$cur"; and not string match -q -- '--*' "$cur"
+    set rest "$(string sub -s 2 -- "$cur")"
+    set insert -
+    while test -n "$rest"
+      set short "$(string sub -l 1 -- "$rest")"
+      set rest "$(string sub -s 2 -- "$rest")"
+      set insert "$insert$short"
+      set metadata (__goml_option "$state" "-$short")
+      test (count $metadata) = 0; and break
+      if test "$metadata[1]" = value
+        __goml_values "$metadata[2]" "$rest" "$insert"
+        return 0
+      end
+      test "$metadata[1]" != flag; and break
+    end
+  end
+  if test "$options" = 1
+    __goml_names "$state" "$cur"
+    string match -q -- '-?*' "$cur"; and return 0
+  end
+  set metadata (__goml_position "$state" "$position")
+  if test (count $metadata) != 0
+    __goml_values "$metadata[1]" "$cur" ''
+  end
+end
+function __goml
+  set -l words (commandline -opc)
+  __goml_engine "$(commandline -to)" $words[2..-1]
+end
+"#
+}

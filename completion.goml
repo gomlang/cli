@@ -1,0 +1,93 @@
+package cli;
+
+#[derive(Debug, PartialEq)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+struct CompletionNode {
+    command: Command,
+    children: Vec[(string, isize)],
+}
+
+fn completion_nodes(command: Command, nodes: Vec[CompletionNode]) -> isize {
+    let index = nodes.len();
+    let children: Vec[(string, isize)] = Vec::new();
+    nodes.push(CompletionNode { command, children });
+    for child in command.commands {
+        let target = completion_nodes(child, nodes);
+        for name in child.aliases.copy().pushed(child.name) {
+            children.push((name, target));
+        }
+    }
+    index
+}
+
+fn completion_quote(value: string, shell: Shell) -> string {
+    let escaped = if shell == Shell::Fish {
+        value.replace("\\", "\\\\").replace("'", "\\'")
+    } else {
+        value.replace("'", "'\\''")
+    };
+    "'" + escaped + "'"
+}
+
+fn completion_identifier(name: string) -> string {
+    let mut result = "_goml_cli";
+    for index in 0..name.byte_len() {
+        result += "_" + name.byte_get(index).to_string();
+    }
+    result
+}
+
+fn completion_spellings(argument: Argument) -> Vec[string] {
+    let result: Vec[string] = Vec::new();
+    for name in argument.aliases.copy().pushed(argument.name) {
+        result.push("--" + name);
+    }
+    if let Some(short) = argument.short_name {
+        result.push("-" + short.to_string());
+    }
+    result
+}
+
+fn completion_validate(command: Command) -> Result[(), Error] {
+    for argument in command.arguments {
+        for value in argument.choices {
+            for index in 0..value.byte_len() {
+                let byte = value.byte_get(index);
+                if byte == 0 || byte == b'\n' || byte == b'\r' || byte == b'\t' {
+                    return Result::Err(
+                        problem(
+                            ErrorKind::InvalidSchema,
+                            "completion choices cannot contain NUL, newline, carriage return or tab",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+    for child in command.commands {
+        completion_validate(child)?;
+    }
+    Result::Ok(())
+}
+
+impl Command {
+    pub fn completion_script(self: Command, shell: Shell) -> Result[string, Error] {
+        let command = prepare_command(self, Vec::new(), 0)?;
+        validate_command(command, 0)?;
+        completion_validate(command)?;
+        let nodes: Vec[CompletionNode] = Vec::new();
+        completion_nodes(command, nodes);
+        let name = completion_identifier(command.name);
+        Result::Ok(
+            match shell {
+                Shell::Fish => completion_fish(name, nodes),
+                _ => completion_bourne(name, nodes, shell),
+            },
+        )
+    }
+}
