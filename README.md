@@ -86,8 +86,18 @@ and environment variables. Generic `cli::parse`, `cli::parse_with_env` and
 `cli::parse_env` additionally decode an `Args` type.
 
 Environment values count as provided for conflict/dependency checks; defaults do
-not. A requirement may be satisfied by a default. Flags and counters do not take
-environment values, defaults or choice lists. Repeated value arguments receive a
+not. A requirement may be satisfied by a default. Flags accept boolean defaults
+and environment values: exactly `true`, `false`, `1`, or `0`, with the same
+precedence as value arguments. Stored flag values are normalized to `true` or
+`false`. An explicit flag enables it and suppresses environment lookup, including
+an invalid environment value. A supplied environment value counts as provided
+even when false, so it participates in requiredness, groups, conflicts, and
+dependencies; defaults never count as provided. Invalid defaults are schema
+errors; invalid environment values are `InvalidValue` errors. Derived boolean
+fields support `#[arg(default = "false", env = "VERBOSE")]` as well.
+Flags still take no command-line value and have no automatic `--no-` spelling.
+Counters do not take environment values or defaults; flags and counters do not
+accept choice lists. Repeated value arguments receive a
 single value from an environment variable; automatic separator splitting is not
 performed.
 
@@ -302,7 +312,7 @@ inheritance and invalid schemas. The `examples/parse` example and its downstream
 exported derives, import aliases and generated-name hygiene;
 A GoML test checks 33 invalid derives through temporary downstream modules, using `std::process` to assert compiler exit status and precise diagnostics.
 
-Flag/counter defaults and environment values remain future work. Schemas must
+Counter defaults and environment values remain future work. Schemas must
 form a finite command tree; recursive type definitions that would expand into an
 infinite command tree are unsupported.
 

@@ -77,15 +77,37 @@ fn validate_command(command: Command, depth: isize) -> Result[(), Error] {
                 problem(ErrorKind::InvalidSchema, "multiple defaults for a scalar argument"),
             )
         }
-        if argument.action != Action::Value
-            && (!argument.defaults.is_empty() || argument.environment.is_some()
-                || !argument.choices.is_empty()) {
+        if argument.action == Action::Count
+            && (!argument.defaults.is_empty() || argument.environment.is_some()) {
             return Result::Err(
                 problem(
                     ErrorKind::InvalidSchema,
-                    "flags and counters cannot have defaults, environment values or choices",
+                    "counters cannot have defaults or environment values",
                 ),
             )
+        }
+        if argument.action != Action::Value && !argument.choices.is_empty() {
+            return Result::Err(
+                problem(ErrorKind::InvalidSchema, "flags and counters cannot have choices"),
+            )
+        }
+        if argument.action == Action::Flag {
+            if argument.defaults.len() > 1 {
+                return Result::Err(
+                    problem(ErrorKind::InvalidSchema, "multiple defaults for a flag"),
+                )
+            }
+            for value in argument.defaults {
+                let parsed: Result[bool, string] = ArgValue::parse_value(value);
+                if parsed.is_err() {
+                    return Result::Err(
+                        problem(
+                            ErrorKind::InvalidSchema,
+                            f"{argument.name}: expected true, false, 1 or 0 for flag default",
+                        ),
+                    )
+                }
+            }
         }
     }
     let mut optional_seen = false;
@@ -168,6 +190,12 @@ fn short_argument(command: Command, name: char) -> Result[Argument, Error] {
 }
 
 fn store(matches: Matches, argument: Argument, value: string, explicit: bool) -> Result[(), Error] {
+    let value = if argument.action == Action::Flag {
+        let parsed: Result[bool, string] = ArgValue::parse_value(value);
+        parsed.map_err(|message| problem(ErrorKind::InvalidValue, f"{argument.name}: {message}"))?.to_string()
+    } else {
+        value
+    };
     if !argument.choices.is_empty() && !argument.choices.contains(value) {
         return Result::Err(
             problem(
