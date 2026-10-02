@@ -225,10 +225,22 @@ custom conversion, enum aliases, empty defaults, integer overflow and stable
 help text. Composition regressions cover nested generic payloads, required and
 optional selectors, flattened positional offsets and argument groups, global
 options at multiple command levels, alias canonicalization, help/version
-inheritance and invalid schemas. The independent consumer verifies
-registry-exported derives, import aliases and generated-name hygiene;
+inheritance and invalid schemas. The `examples/parse` example and its downstream verification check
+exported derives, import aliases and generated-name hygiene;
 A GoML test checks 33 invalid derives through temporary downstream modules, using `std::process` to assert compiler exit status and precise diagnostics.
 
 Shell completion and flag/counter defaults or environment values remain future
 work. Schemas must form a finite command tree; recursive type definitions that
 would expand into an infinite command tree are unsupported.
+
+## Development and examples
+
+Requires GoML 0.1.55 or newer. The `examples/parse/` example shares the root manifest. From the library root, run:
+
+```sh
+goml run --example parse
+goml test
+goml verify --timeout 300s
+```
+
+`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test cli)` also retains the library-specific smoke and compatibility checks.
