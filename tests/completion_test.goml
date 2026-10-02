@@ -26,6 +26,16 @@ fn completion_command() -> cli::Command {
                     "`touch injected`",
                     "back\\slash",
                     "[wild]*?",
+                    "evil$(touch injected)",
+                    "tick`touch injected`",
+                    "dollar$HOME",
+                    "semi;touch injected",
+                    "glob[abc]*?",
+                    "region:east",
+                    "region:west",
+                    "dirchoice",
+                    "café",
+                    "漢字 two",
                 ],
             ),
         ),
@@ -77,10 +87,11 @@ fn completion_candidates(shell: cli::Shell, script: string, words: Vec[string], 
     let harness = match shell {
         cli::Shell::Bash => r#"source "$1"
 shift
-COMP_WORDS=("$@")
-COMP_CWORD=$((${#COMP_WORDS[@]} - 1))
-_goml_cli_97_112_112
-for value in "${COMPREPLY[@]}"; do printf '%s\n' "$value"; done
+candidates=()
+current="${@: -1}"
+previous=("${@:2:$#-2}")
+_goml_cli_97_112_112_engine "$current" "${previous[@]}"
+for value in "${candidates[@]}"; do printf '%s\n' "$value"; done
 "#,
         cli::Shell::Zsh => r#"compdef() { :; }
 compadd() { shift; for value in "$@"; do printf '%s\n' "$value"; done; }
@@ -185,26 +196,6 @@ fn completion_scripts_run_in_real_shells() -> () {
             }
         }
         testing::assert(!fs::is_file(path::join(directory, "injected")));
-        if shell == cli::Shell::Bash {
-            testing::assert(
-                completion_candidates(
-                    shell,
-                    script,
-                    Vec::from_array(["app", "--mode", "=", "sa"]),
-                    directory,
-                )
-                    == Vec::from_array(["safe"]),
-            );
-            testing::assert(
-                completion_candidates(
-                    shell,
-                    script,
-                    Vec::from_array(["app", "--mode", "=", "run", "r", "--f"]),
-                    directory,
-                )
-                    == Vec::from_array(["--force"]),
-            );
-        }
         if shell == cli::Shell::Fish {
             let output = completion_run(
                 shell,
@@ -247,6 +238,8 @@ fn completion_generation_validates_schemas_and_protocol_values() -> () {
                 "tab\tvalue",
                 "carriage\rreturn",
                 "zero" + char_from_u32(0).unwrap_or('_').to_string() + "byte",
+                "escape" + char_from_u32(27).unwrap_or('_').to_string(),
+                "delete" + char_from_u32(127).unwrap_or('_').to_string(),
             ],
         ) {
             let schema = cli::Command::new("app").arg(
@@ -263,4 +256,40 @@ fn completion_generation_validates_schemas_and_protocol_values() -> () {
         );
         testing::assert_err(collision.completion_script(shell));
     }
+}
+
+#[test]
+fn completion_acceptance_preserves_literal_arguments_in_interactive_shells() -> () {
+    let directory = path::join(
+        testing::expect_ok(env::current_dir_structured(), "current directory"),
+        "_artifact/completion-pty-tests",
+    );
+    testing::assert_ok(fs::create_dir_all(directory));
+    for (shell, name) in Vec::from_array(
+        [(cli::Shell::Bash, "bash"), (cli::Shell::Zsh, "zsh"), (cli::Shell::Fish, "fish")],
+    ) {
+        testing::assert_ok(
+            fs::write_file_structured(
+                path::join(directory, "completion." + name),
+                testing::expect_ok(
+                    completion_command().completion_script(shell),
+                    "completion generation",
+                ),
+            ),
+        );
+    }
+    let output = testing::expect_ok(
+        process::Command::new("python3").args(
+            Vec::from_array(
+                ["tests/data/completion_pty.py", directory, completion_shell_name(cli::Shell::Fish)],
+            ),
+        ).output_timeout_structured(time::Duration::from_seconds(180)),
+        "interactive completion regression",
+    );
+    let stdout = testing::expect_ok(output.stdout().to_string_utf8(), "PTY stdout");
+    let stderr = testing::expect_ok(output.stderr().to_string_utf8(), "PTY stderr");
+    if !output.status().success() {
+        testing::fail(stdout + stderr);
+    }
+    testing::assert(stdout.contains("interactive completion cases passed"));
 }
