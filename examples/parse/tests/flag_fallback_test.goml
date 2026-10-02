@@ -1,0 +1,112 @@
+package tests;
+
+use ecosystem::cli;
+use cli::{Args};
+use std::testing;
+
+#[derive(Args)]
+struct FlagDefaults {
+    #[arg(short = "v", default = "1", env = "VERBOSE", global)]
+    verbose: bool,
+    #[arg(default = "0")]
+    quiet: bool,
+}
+
+#[test]
+fn derived_boolean_fallbacks_have_explicit_environment_default_precedence() -> () {
+    let defaults: FlagDefaults = testing::expect_ok(cli::parse(Vec::new()), "defaults");
+    testing::assert(defaults.verbose && !defaults.quiet);
+    for value in Vec::from_array(["false", "0", "true", "1"]) {
+        let expected = value == "true" || value == "1";
+        let result: FlagDefaults = testing::expect_ok(
+            cli::parse_with_env(Vec::new(), |_| Option::Some(value)),
+            "environment",
+        );
+        testing::assert_eq(result.verbose, expected);
+    }
+    let called = Ref::new(false);
+    let result: FlagDefaults = testing::expect_ok(
+        cli::parse_with_env(
+            Vec::from_array(["-v"]),
+            |_| {
+                called.set(true);
+                Option::Some("invalid")
+            },
+        ),
+        "explicit flag",
+    );
+    testing::assert(result.verbose && !called.get());
+    let invalid: Result[FlagDefaults, cli::Error] = cli::parse_with_env(
+        Vec::new(),
+        |_| Option::Some(""),
+    );
+    testing::assert_eq(
+        testing::expect_err(invalid, "invalid env").kind,
+        cli::ErrorKind::InvalidValue,
+    );
+}
+
+#[test]
+fn flag_fallbacks_preserve_provenance_and_global_matches() -> () {
+    let root = cli::Command::new("app").arg(
+        cli::Argument::flag("verbose").global(true).default_value("1").env("VERBOSE"),
+    ).subcommand(cli::Command::new("run"));
+    let matches = testing::expect_ok(root.parse(Vec::from_array(["run"])), "global default");
+    testing::assert(matches.flag("verbose") && !matches.was_provided("verbose"));
+    let child = testing::expect_some(matches.subcommand(), "child");
+    testing::assert_eq(child.raw("verbose")[0], "true");
+    testing::assert(!child.was_provided("verbose"));
+    let matches = testing::expect_ok(
+        root.parse_with_env(Vec::from_array(["run"]), |_| Option::Some("0")),
+        "global false environment",
+    );
+    testing::assert(
+        matches.contains("verbose") && matches.was_provided("verbose") && !matches.flag("verbose"),
+    );
+    let child = testing::expect_some(matches.subcommand(), "child");
+    testing::assert(child.was_provided("verbose") && !child.flag("verbose"));
+    let matches = testing::expect_ok(
+        root.parse_with_env(Vec::from_array(["run", "--verbose"]), |_| Option::Some("invalid")),
+        "child explicit",
+    );
+    testing::assert(matches.flag("verbose"));
+    testing::assert_err(root.parse(Vec::from_array(["--verbose=false"])));
+}
+
+#[test]
+fn false_environment_flags_participate_in_constraints_but_defaults_do_not() -> () {
+    let command = cli::Command::new("app").arg(
+        cli::Argument::flag("left").env("LEFT").default_value("true").conflicts_with(
+            Vec::from_array(["right"]),
+        ),
+    ).arg(cli::Argument::flag("right"));
+    testing::assert_ok(command.parse(Vec::from_array(["--right"])));
+    testing::assert_eq(
+        testing::expect_err(
+            command.parse_with_env(Vec::from_array(["--right"]), |_| Option::Some("false")),
+            "false is provided",
+        ).kind,
+        cli::ErrorKind::Usage,
+    );
+    let group = cli::Command::new("app").arg(
+        cli::Argument::flag("left").env("LEFT").default_value("true"),
+    ).group(cli::ArgGroup::new("selection", Vec::from_array(["left"])).required(true));
+    testing::assert_err(group.parse(Vec::new()));
+    testing::assert_ok(group.parse_with_env(Vec::new(), |_| Option::Some("false")));
+    let dependency = cli::Command::new("app").arg(
+        cli::Argument::flag("left").env("LEFT").requires(Vec::from_array(["right"])),
+    ).arg(cli::Argument::flag("right"));
+    testing::assert_err(dependency.parse_with_env(Vec::new(), |_| Option::Some("false")));
+    testing::assert_ok(
+        dependency.parse_with_env(Vec::from_array(["--right"]), |_| Option::Some("false")),
+    );
+    testing::assert_err(
+        cli::Command::new("app").arg(cli::Argument::flag("flag").default_value("yes")).validate(),
+    );
+    let mut invalid = cli::Argument::flag("flag").multiple(true);
+    invalid.defaults = Vec::from_array(["true", "false"]);
+    testing::assert_err(cli::Command::new("app").arg(invalid).validate());
+    testing::assert_err(
+        cli::Command::new("app").arg(cli::Argument::counter("count").env("COUNT")).validate(),
+    );
+}
