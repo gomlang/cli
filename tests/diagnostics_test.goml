@@ -44,7 +44,7 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
         let expected = testing::expect_some(json::as_string(row[1]), "diagnostic");
         testing::assert_ok(
             fs::write_file_structured(
-                path::join(directory, "main.gom"),
+                path::join(directory, "main.goml"),
                 "package main;\nuse ecosystem::cli;\n" + declaration + "\nfn main() -> () {}\n",
             ),
         );
