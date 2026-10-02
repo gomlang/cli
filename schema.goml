@@ -113,6 +113,9 @@ fn copy_globals(command: Command, source: Matches, destination: Matches) -> () {
             if source.was_provided(argument.name) {
                 destination.explicit_names.set(argument.name, true);
             }
+            if let Some(count) = source.fallback_counts.get(argument.name) {
+                destination.fallback_counts.set(argument.name, count);
+            }
         }
     }
 }
@@ -121,6 +124,7 @@ fn empty_matches(name: string) -> Matches {
     Matches {
         command: name,
         values_by_name: HashMap::new(),
+        fallback_counts: HashMap::new(),
         explicit_names: HashMap::new(),
         children: Vec::new(),
     }

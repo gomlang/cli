@@ -77,14 +77,17 @@ fn validate_command(command: Command, depth: isize) -> Result[(), Error] {
                 problem(ErrorKind::InvalidSchema, "multiple defaults for a scalar argument"),
             )
         }
-        if argument.action == Action::Count
-            && (!argument.defaults.is_empty() || argument.environment.is_some()) {
-            return Result::Err(
-                problem(
-                    ErrorKind::InvalidSchema,
-                    "counters cannot have defaults or environment values",
-                ),
-            )
+        if argument.action == Action::Count {
+            if argument.defaults.len() > 1 {
+                return Result::Err(
+                    problem(ErrorKind::InvalidSchema, "multiple defaults for a counter"),
+                )
+            }
+            for value in argument.defaults {
+                count_value(value).map_err(
+                    |message| problem(ErrorKind::InvalidSchema, f"{argument.name}: {message}"),
+                )?;
+            }
         }
         if argument.action != Action::Value && !argument.choices.is_empty() {
             return Result::Err(
@@ -224,6 +227,35 @@ fn option_value(arguments: Vec[string], index: isize, name: string) -> Result[st
     }
 }
 
+fn count_value(value: string) -> Result[isize, string] {
+    if value == "" {
+        return Result::Err("expected a nonnegative decimal count")
+    }
+    for index in 0..value.byte_len() {
+        let digit = value.byte_get(index);
+        if digit < b'0' || digit > b'9' {
+            return Result::Err("expected a nonnegative decimal count")
+        }
+    }
+    ArgValue::parse_value(value)
+}
+
+fn store_fallback(matches: Matches, argument: Argument, value: string, provided: bool) -> Result[
+    (),
+    Error,
+] {
+    if argument.action == Action::Count {
+        let count = count_value(value).map_err(
+            |message| problem(ErrorKind::InvalidValue, f"{argument.name}: {message}"),
+        )?;
+        store(matches, argument, count.to_string(), provided)?;
+        matches.fallback_counts.set(argument.name, count);
+        Result::Ok(())
+    } else {
+        store(matches, argument, value, provided)
+    }
+}
+
 fn parse_command(
     command: Command,
     arguments: Vec[string],
@@ -351,10 +383,10 @@ fn parse_command(
                 None => Option::None,
             };
             if let Some(value) = fallback {
-                store(matches, argument, value, true)?;
+                store_fallback(matches, argument, value, true)?;
             } else {
                 for value in argument.defaults {
-                    store(matches, argument, value, false)?;
+                    store_fallback(matches, argument, value, false)?;
                 }
             }
         }

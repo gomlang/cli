@@ -122,6 +122,7 @@ impl Command {
 pub struct Matches {
     pub command: string,
     values_by_name: HashMap[string, Vec[string]],
+    fallback_counts: HashMap[string, isize],
     explicit_names: HashMap[string, bool],
     children: Vec[Matches],
 }

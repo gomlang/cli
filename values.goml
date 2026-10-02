@@ -110,7 +110,7 @@ impl Matches {
     }
 
     pub fn count(self: Matches, name: string) -> isize {
-        self.raw(name).len()
+        self.fallback_counts.get(name).unwrap_or(self.raw(name).len())
     }
 
     pub fn subcommand(self: Matches) -> Option[Matches] {

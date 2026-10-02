@@ -96,8 +96,17 @@ dependencies; defaults never count as provided. Invalid defaults are schema
 errors; invalid environment values are `InvalidValue` errors. Derived boolean
 fields support `#[arg(default = "false", env = "VERBOSE")]` as well.
 Flags still take no command-line value and have no automatic `--no-` spelling.
-Counters do not take environment values or defaults; flags and counters do not
-accept choice lists. Repeated value arguments receive a
+Counters accept one default or environment value consisting of decimal ASCII
+digits in `0..isize::MAX`. Signs, whitespace, empty values and overflow are
+rejected. An explicit counter occurrence overrides the complete fallback, so
+`-vv` yields 2 even when the environment contains 5. Counter fallbacks use compact
+storage: `count(name)` returns the numeric count, and `raw(name)` contains one
+normalized decimal string. Explicit counters retain one `"true"` raw entry per
+occurrence. A zero environment count is provided for constraint checks; a default
+is not. Invalid defaults are `InvalidSchema`; invalid environment counts are
+`InvalidValue`. Derives support `#[arg(count, default = "0", env = "VERBOSE")]`
+on `isize` fields. Flags and counters do not accept choice lists.
+Repeated value arguments receive a
 single value from an environment variable; automatic separator splitting is not
 performed.
 
@@ -312,7 +321,7 @@ inheritance and invalid schemas. The `examples/parse` example and its downstream
 exported derives, import aliases and generated-name hygiene;
 A GoML test checks 33 invalid derives through temporary downstream modules, using `std::process` to assert compiler exit status and precise diagnostics.
 
-Counter defaults and environment values remain future work. Schemas must
+Automatic negated flags and dynamic completion remain future work. Schemas must
 form a finite command tree; recursive type definitions that would expand into an
 infinite command tree are unsupported.
 
