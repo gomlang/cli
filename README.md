@@ -264,6 +264,13 @@ as filenames, so an existing directory cannot change a candidate by appending
 `/`. Ordinary single/double quotes and backslash escapes in command words are
 recognized; completion does not evaluate variable or command substitutions.
 
+Empty strings are valid choices. Bash and Zsh can insert a separate empty
+argument, including when completing inside quotes. For compatibility with Fish
+3.x, type `''` or `""` first (an opening quote is enough for completion to close
+it), or use a long option's `--name=` form. Fish 3.x's completion reader cannot
+insert a new quoted word from an unquoted empty candidate; the generated script
+keeps the candidate with an `Empty value (use quotes)` description.
+
 Requires Bash 4.3+, Zsh 5+, or Fish 3.4+. With the `examples/completions` schema
 (named `app`), generate and load a script explicitly:
 

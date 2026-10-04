@@ -76,6 +76,28 @@ def run_case(shell, arguments, prefix, expected, suffix=""):
         os.close(fd)
 
 
+if len(sys.argv) > 3 and sys.argv[3] == "empty":
+    for shell, arguments in [("bash", ["--noprofile", "--norc", "-i"]), ("zsh", ["-f", "-i"]), (fish, ["--no-config", "--interactive"])]:
+        for quote in ["", "'", '"', "''", '""']:
+            # Fish 3.x needs a quote for a separate empty argument; its completion
+            # reader otherwise inserts only a space for an empty candidate.
+            if shell != fish or quote:
+                for option in ["--mode", "--style", "-m"]:
+                    run_case(shell, arguments, "app " + option + " " + quote, [option, ""])
+                run_case(shell, arguments, "app run -- " + quote, ["run", "--", ""])
+                suffix = (quote if len(quote) == 1 else "") + " end"
+                run_case(shell, arguments, "app run --mode " + quote, ["run", "--mode", "", "end"], suffix)
+            for option in ["--mode", "--style"]:
+                run_case(shell, arguments, "app " + option + "=" + quote, [option + "="])
+        for quote in ["", "'", '"']:
+            run_case(shell, arguments, "app --mixed " + quote + "va", ["--mixed", "value"])
+            run_case(shell, arguments, "app --mixed " + quote + "tw", ["--mixed", "two words"])
+        run_case(shell, arguments, "app --mixed unknown", ["--mixed", "unknown"])
+    (root / "pty-report.json").write_text(json.dumps(report, indent=2))
+    print(f"{len(report)} interactive empty completion cases passed")
+    sys.exit(0)
+
+
 values = [
     ("two", "two words"),
     ("quo", "quo'te"),

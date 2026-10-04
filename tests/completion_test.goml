@@ -293,3 +293,57 @@ fn completion_acceptance_preserves_literal_arguments_in_interactive_shells() -> 
     }
     testing::assert(stdout.contains("interactive completion cases passed"));
 }
+
+#[test]
+fn completion_acceptance_preserves_empty_arguments_in_interactive_shells() -> () {
+    let command = cli::Command::new("app").arg(
+        cli::Argument::new("mode").short('m').alias("style").global(true).possible_values(
+            Vec::from_array([""]),
+        ),
+    ).arg(cli::Argument::new("mixed").possible_values(Vec::from_array(["", "value", "two words"]))).subcommand(
+        cli::Command::new("run").arg(
+            cli::Argument::new("target").positional(0).possible_values(Vec::from_array([""])),
+        ),
+    );
+    for arguments in Vec::from_array(
+        [Vec::from_array(["--mode", ""]), Vec::from_array(["--mode="])],
+    ) {
+        let matches = testing::expect_ok(command.parse(arguments), "empty choice is valid");
+        testing::assert_eq(matches.raw("mode").len(), 1);
+        testing::assert_eq(matches.raw("mode")[0], "");
+    }
+    let directory = path::join(
+        testing::expect_ok(env::current_dir_structured(), "current directory"),
+        "_artifact/completion-empty-pty-tests",
+    );
+    testing::assert_ok(fs::create_dir_all(directory));
+    for (shell, name) in Vec::from_array(
+        [(cli::Shell::Bash, "bash"), (cli::Shell::Zsh, "zsh"), (cli::Shell::Fish, "fish")],
+    ) {
+        testing::assert_ok(
+            fs::write_file_structured(
+                path::join(directory, "completion." + name),
+                testing::expect_ok(command.completion_script(shell), "empty choice completion"),
+            ),
+        );
+    }
+    let output = testing::expect_ok(
+        process::Command::new("python3").args(
+            Vec::from_array(
+                [
+                    "tests/data/completion_pty.py",
+                    directory,
+                    completion_shell_name(cli::Shell::Fish),
+                    "empty",
+                ],
+            ),
+        ).output_timeout_structured(time::Duration::from_seconds(180)),
+        "interactive empty completion regression",
+    );
+    let stdout = testing::expect_ok(output.stdout().to_string_utf8(), "PTY stdout");
+    let stderr = testing::expect_ok(output.stderr().to_string_utf8(), "PTY stderr");
+    if !output.status().success() {
+        testing::fail(stdout + stderr);
+    }
+    testing::assert(stdout.contains("interactive empty completion cases passed"));
+}

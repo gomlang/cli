@@ -308,7 +308,10 @@ __goml() {
         escaped+="$char"
       fi
     done
-    [[ -z "$word" && -z "$quote" ]] && escaped="''"
+    if [[ -z "$word" ]]; then
+      # Readline needs a quoted empty word, including its opening quote.
+      if [[ -z "$quote" ]]; then escaped="''"; else escaped="$quote$quote"; fi
+    fi
     COMPREPLY+=("$escaped")
   done
 }
@@ -328,9 +331,13 @@ fn completion_zsh_wrapper() -> string {
   word="${words[CURRENT]}"
   __goml_decode "$word"
   __goml_engine "$decoded" "${previous[@]}"
-  if (( ${#candidates[@]} )); then
-    compadd -- "${candidates[@]}"
-  fi
+  for word in "${candidates[@]}"; do
+    if [[ -z "$word" && -z "${compstate[quote]}" ]]; then
+      compadd -Q -- "''"
+    else
+      compadd -- "$word"
+    fi
+  done
 }
 "#
 }
