@@ -110,7 +110,11 @@ impl Matches {
     }
 
     pub fn count(self: Matches, name: string) -> isize {
-        self.fallback_counts.get(name).unwrap_or(self.raw(name).len())
+        if let Some(count) = self.fallback_counts.get(name) {
+            count
+        } else {
+            self.values_by_name.get(name).map(|values| values.len()).unwrap_or(0)
+        }
     }
 
     pub fn subcommand(self: Matches) -> Option[Matches] {
