@@ -308,9 +308,12 @@ __goml() {
         escaped+="$char"
       fi
     done
-    if [[ -z "$word" ]]; then
-      # Readline needs a quoted empty word, including its opening quote.
-      if [[ -z "$quote" ]]; then escaped="''"; else escaped="$quote$quote"; fi
+    # Complete quoted words preserve the closing quote when Readline cycles
+    # between empty and nonempty choices with a suffix after the cursor.
+    if [[ -n "$quote" ]]; then
+      escaped="$quote$escaped$quote"
+    elif [[ -z "$word" ]]; then
+      escaped="''"
     fi
     COMPREPLY+=("$escaped")
   done

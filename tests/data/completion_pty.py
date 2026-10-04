@@ -33,7 +33,7 @@ def fish_quote(value):
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def run_case(shell, arguments, prefix, expected, suffix=""):
+def run_case(shell, arguments, prefix, expected, suffix="", menu_steps=0):
     marker = root / "injected"
     marker.unlink(missing_ok=True)
     pid, fd = pty.fork()
@@ -57,14 +57,23 @@ def run_case(shell, arguments, prefix, expected, suffix=""):
             setup += "; app() { " + shlex.quote(sys.executable) + " -c " + shlex.quote(reader) + ' "$@"; }; PS1="GOML_PROMPT> "'
             if shell == "zsh":
                 setup = "autoload -Uz compinit; compinit -D -i; " + setup
+            elif menu_steps:
+                setup += r'; bind "\C-i: menu-complete"'
         os.write(fd, (setup + "; printf '__GOML_READY__\\n'\n").encode())
         read_until(fd, rb"__GOML_READY__\r\n")
-        os.write(fd, (prefix + suffix + "\x02" * len(suffix) + "\t\n").encode())
+        if menu_steps:
+            os.write(fd, (prefix + suffix + "\x02" * len(suffix)).encode())
+            for _ in range(menu_steps):
+                os.write(fd, b"\t")
+                time.sleep(0.1)
+            os.write(fd, b"\x05\n")
+        else:
+            os.write(fd, (prefix + suffix + "\x02" * len(suffix) + "\t\n").encode())
         output, match = read_until(fd, rb"GOML_ARGS:(\[[^\r\n]*\])\r\n")
         actual = json.loads(match.group(1))
         if actual != expected or marker.exists():
             raise AssertionError(f"{shell}: {prefix}: expected {expected!r}, got {actual!r}, injection={marker.exists()}")
-        report.append({"shell": shell, "prefix": prefix, "arguments": actual, "injected": False})
+        report.append({"shell": shell, "prefix": prefix, "menu_steps": menu_steps, "arguments": actual, "injected": False})
     except BaseException as error:
         raise AssertionError(f"{shell}: {prefix}: {error}; terminal={output.decode(errors='replace')}") from error
     finally:
@@ -93,6 +102,10 @@ if len(sys.argv) > 3 and sys.argv[3] == "empty":
             run_case(shell, arguments, "app --mixed " + quote + "va", ["--mixed", "value"])
             run_case(shell, arguments, "app --mixed " + quote + "tw", ["--mixed", "two words"])
         run_case(shell, arguments, "app --mixed unknown", ["--mixed", "unknown"])
+    for quote in ["", "'", '"']:
+        for step, value in enumerate(["", "two words", "value"], 1):
+            run_case("bash", ["--noprofile", "--norc", "-i"], "app --mixed " + quote,
+                     ["--mixed", value, "tail"], quote + " tail", step)
     (root / "pty-report.json").write_text(json.dumps(report, indent=2))
     print(f"{len(report)} interactive empty completion cases passed")
     sys.exit(0)
