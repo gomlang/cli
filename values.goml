@@ -96,7 +96,7 @@ impl Matches {
 
     pub fn values[T: ArgValue](self: Matches, name: string) -> Result[Vec[T], Error] {
         let result: Vec[T] = Vec::new();
-        for value in self.raw(name) {
+        for value in self.values_by_name.get(name).unwrap_or(Vec::new()) {
             let parsed: Result[T, string] = ArgValue::parse_value(value);
             result.push(
                 parsed.map_err(|message| problem(ErrorKind::InvalidValue, f"{name}: {message}"))?,
