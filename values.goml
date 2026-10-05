@@ -78,7 +78,7 @@ impl Matches {
     }
 
     pub fn value[T: ArgValue](self: Matches, name: string) -> Result[T, Error] {
-        let values = self.raw(name);
+        let values = self.values_by_name.get(name).unwrap_or(Vec::new());
         if values.len() != 1 {
             return Result::Err(problem(ErrorKind::Usage, f"expected one value for {name}"))
         }
@@ -106,7 +106,9 @@ impl Matches {
     }
 
     pub fn flag(self: Matches, name: string) -> bool {
-        self.raw(name).last().unwrap_or("false") == "true"
+        self.values_by_name.get(name).map(|values| values.last().unwrap_or("false") == "true").unwrap_or(
+            false,
+        )
     }
 
     pub fn count(self: Matches, name: string) -> isize {
