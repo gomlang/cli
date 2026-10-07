@@ -326,7 +326,11 @@ optional selectors, flattened positional offsets and argument groups, global
 options at multiple command levels, alias canonicalization, help/version
 inheritance and invalid schemas. The `examples/parse` example and its downstream verification check
 exported derives, import aliases and generated-name hygiene;
-A GoML test checks 33 invalid derives through temporary downstream modules, using `std::process` to assert compiler exit status and precise diagnostics.
+A GoML test checks 33 invalid derives through temporary downstream modules, using
+`std::process` to assert compiler exit status and argument-level diagnostic locations.
+Derives use compiler-provided structured attribute metadata for names, decoded strings
+and source spans; normal strings, raw strings and comments retain their existing
+semantics.
 
 Automatic negated flags and dynamic completion remain future work. Schemas must
 form a finite command tree; recursive type definitions that would expand into an
@@ -334,7 +338,7 @@ infinite command tree are unsupported.
 
 ## Development and examples
 
-Requires GoML 0.1.56 or newer. The `examples/parse/` and `examples/completions/`
+Requires GoML 0.1.59 or newer. The `examples/parse/` and `examples/completions/`
 examples share the root manifest. From the library root, run:
 
 ```sh

@@ -36,8 +36,8 @@ fn validate_composed_field(input: DeriveInput, field: isize, flatten: bool) -> (
         if meta_attribute_name(attribute) != "arg" {
             continue;
         }
-        let mut cursor = attribute_start(attribute);
-        while cursor < meta_attribute_text(attribute).byte_len() {
+        let mut cursor = 0;
+        while cursor < meta_attribute_argument_count(attribute) {
             let current = attribute_next(attribute, cursor);
             if current.0 == "" {
                 break;
@@ -45,9 +45,11 @@ fn validate_composed_field(input: DeriveInput, field: isize, flatten: bool) -> (
             let name = current.0;
             if current.2 || (flatten && name != "flatten")
                 || (!flatten && name != "subcommand" && name != "required" && name != "optional") {
-                compile_error(
+                let _ = derive_error_at_argument(
+                    attribute,
+                    cursor,
                     "flatten and subcommand fields cannot use ordinary argument attributes",
-                )
+                );
             }
             cursor = current.3;
         }
@@ -133,18 +135,26 @@ fn validate_subcommand_variant(input: DeriveInput, variant: isize) -> () {
             continue;
         }
         validate_attribute_syntax(attribute);
-        let mut cursor = attribute_start(attribute);
-        while cursor < meta_attribute_text(attribute).byte_len() {
+        let mut cursor = 0;
+        while cursor < meta_attribute_argument_count(attribute) {
             let current = attribute_next(attribute, cursor);
             if current.0 == "" {
                 break;
             }
             let key = current.0;
             if !current.2 {
-                compile_error("subcommand attributes require named string values")
+                let _ = derive_error_at_argument(
+                    attribute,
+                    cursor,
+                    "subcommand attributes require named string values",
+                );
             }
             if key != "name" && key != "alias" && key != "about" && key != "version" {
-                compile_error("unknown subcommand attribute: " + key)
+                let _ = derive_error_at_argument(
+                    attribute,
+                    cursor,
+                    "unknown subcommand attribute: " + key,
+                );
             }
             cursor = current.3;
         }

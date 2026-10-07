@@ -16,8 +16,8 @@ fn types_one(value: MetaType) -> MetaTypeList {
 
 #[comptime_derive]
 fn attribute_value(attribute: MetaAttribute, key: string, fallback: string) -> string {
-    let mut index = attribute_start(attribute);
-    let length = meta_attribute_text(attribute).byte_len();
+    let mut index = 0;
+    let length = meta_attribute_argument_count(attribute);
     while index < length {
         let current = attribute_next(attribute, index);
         if current.0 == key && current.2 {
@@ -70,8 +70,8 @@ fn validate_field_attributes(input: DeriveInput, field: isize) -> () {
             continue;
         }
         validate_attribute_syntax(attribute);
-        let mut cursor = attribute_start(attribute);
-        while cursor < meta_attribute_text(attribute).byte_len() {
+        let mut cursor = 0;
+        while cursor < meta_attribute_argument_count(attribute) {
             let current = attribute_next(attribute, cursor);
             let name = current.0;
             if name == "" {
@@ -84,7 +84,11 @@ fn validate_field_attributes(input: DeriveInput, field: isize) -> () {
                     && name != "global"
                     && name != "flatten"
                     && name != "subcommand" {
-                    compile_error("unknown CLI argument switch: " + name)
+                    let _ = derive_error_at_argument(
+                        attribute,
+                        cursor,
+                        "unknown CLI argument switch: " + name,
+                    );
                 }
             } else if name != "long" && name != "short" && name != "help" && name != "default"
                 && name != "env"
@@ -92,7 +96,11 @@ fn validate_field_attributes(input: DeriveInput, field: isize) -> () {
                 && name != "conflicts"
                 && name != "requires"
                 && name != "alias" {
-                compile_error("unknown CLI argument attribute: " + name)
+                let _ = derive_error_at_argument(
+                    attribute,
+                    cursor,
+                    "unknown CLI argument attribute: " + name,
+                );
             }
             cursor = current.3;
         }
@@ -266,18 +274,26 @@ pub fn derive_args(input: DeriveInput) -> DeriveOutput {
         let attribute = derive_attribute(input, index);
         if meta_attribute_name(attribute) == "command" {
             validate_attribute_syntax(attribute);
-            let mut cursor = attribute_start(attribute);
-            while cursor < meta_attribute_text(attribute).byte_len() {
+            let mut cursor = 0;
+            while cursor < meta_attribute_argument_count(attribute) {
                 let current = attribute_next(attribute, cursor);
                 if current.0 == "" {
                     break;
                 }
                 if !current.2 {
-                    compile_error("command attributes require named string values")
+                    let _ = derive_error_at_argument(
+                        attribute,
+                        cursor,
+                        "command attributes require named string values",
+                    );
                 }
                 let key = current.0;
                 if key != "name" && key != "about" && key != "version" && key != "alias" {
-                    compile_error("unknown command attribute: " + key)
+                    let _ = derive_error_at_argument(
+                        attribute,
+                        cursor,
+                        "unknown command attribute: " + key,
+                    );
                 }
                 cursor = current.3;
             }

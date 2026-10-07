@@ -66,7 +66,34 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
         if output.status().success() || !message.contains(expected) {
             testing::fail("case " + count.to_string() + " expected " + expected + ": " + message);
         }
+        if row.len() > 2 {
+            let anchor = testing::expect_some(json::as_string(row[2]), "diagnostic argument");
+            let formatted_source = testing::expect_ok(
+                fs::read_file_structured(path::join(directory, "main.goml")),
+                "formatted source",
+            );
+            let location = argument_location(formatted_source, anchor);
+            if !message.contains(location) {
+                testing::fail("expected argument location " + location + ": " + message);
+            }
+        }
         count += 1;
     }
     testing::assert_eq(count, 33);
+}
+
+fn argument_location(source: string, argument: string) -> string {
+    let mut line_number = 1;
+    for line in source.split("\n") {
+        for index in 0..line.byte_len() {
+            if line.byte_slice(index, line.byte_len()).starts_with(argument) {
+                return "primary: main.goml:" + line_number.to_string() + ":"
+                    + (index + 1).to_string()
+                    + "-"
+            }
+        }
+        line_number += 1;
+    }
+    testing::fail("missing diagnostic argument: " + argument);
+    ""
 }
