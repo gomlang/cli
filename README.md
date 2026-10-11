@@ -338,13 +338,13 @@ infinite command tree are unsupported.
 
 ## Development and examples
 
-Requires GoML 0.1.59 or newer. The `examples/parse/` and `examples/completions/`
+Requires the [current GoML toolchain](https://github.com/gomlang/verification/blob/main/ci/toolchain.json) with unversioned registry support. The `examples/parse/` and `examples/completions/`
 examples share the root manifest. From the library root, run:
 
 ```sh
 goml run --example parse
 goml test
-goml verify --timeout 300s
+(cd ../verification && just ecosystem-test cli)
 ```
 
-`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test cli)` also retains the library-specific smoke and compatibility checks.
+`goml test` builds the example and runs its tests. `(cd ../verification && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.
