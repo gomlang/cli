@@ -315,7 +315,7 @@ before required-value checks. The library never exits the process or prints on
 the caller's behalf.
 
 ```sh
-(cd ../verification && just ecosystem-test cli)
+(cd ../workflows && just ecosystem-test cli)
 ```
 
 Tests exercise explicit schemas, clusters, terminators, duplicate/missing values,
@@ -338,13 +338,13 @@ infinite command tree are unsupported.
 
 ## Development and examples
 
-Requires the [current GoML toolchain](https://github.com/gomlang/verification/blob/main/ci/toolchain.json) with unversioned registry support. The `examples/parse/` and `examples/completions/`
+Requires the [current GoML toolchain](https://github.com/gomlang/workflows/blob/main/ci/toolchain.json) with unversioned registry support. The `examples/parse/` and `examples/completions/`
 examples share the root manifest. From the library root, run:
 
 ```sh
 goml run --example parse
 goml test --timeout 300s
-(cd ../verification && just ecosystem-test cli)
+(cd ../workflows && just ecosystem-test cli)
 ```
 
-`goml test --timeout 300s` builds the example and runs its tests. `(cd ../verification && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.
+`goml test --timeout 300s` builds the example and runs its tests. `(cd ../workflows && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.
