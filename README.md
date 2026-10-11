@@ -343,8 +343,8 @@ examples share the root manifest. From the library root, run:
 
 ```sh
 goml run --example parse
-goml test
+goml test --timeout 300s
 (cd ../verification && just ecosystem-test cli)
 ```
 
-`goml test` builds the example and runs its tests. `(cd ../verification && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.
+`goml test --timeout 300s` builds the example and runs its tests. `(cd ../verification && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.

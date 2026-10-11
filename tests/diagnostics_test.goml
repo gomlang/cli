@@ -15,11 +15,16 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
     let module_root = testing::expect_ok(env::current_dir_structured(), "module directory");
     let driver = match env::var_structured("GOML_VERIFY_DRIVER") {
         Result::Ok(value) => value,
-        Result::Err(_) => testing::expect_ok(
-            fs::canonicalize("../../goml-dev/stage2/bin/goml"),
-            "driver",
-        ),
+        Result::Err(_) => match env::var_structured("GOML") {
+            Result::Ok(value) => value,
+            Result::Err(_) => "goml",
+        },
     };
+    // Resolve before changing the child directory, including relative GOML paths.
+    let driver = testing::expect_ok(
+        fs::canonicalize(testing::expect_ok(process::look_path_structured(driver), "driver lookup")),
+        "driver path",
+    );
     let source = testing::expect_ok(
         fs::read_file_structured("tests/data/diagnostics.jsonl"),
         "diagnostic fixtures",
@@ -29,7 +34,7 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
     defer {
         testing::assert_ok(fs::remove_dir_all(directory));
     };
-    let manifest = "[module]\npath=\"diagnostics::cli\"\n[dependencies]\n\"ecosystem::cli\"=\"0.1.0\"\n";
+    let manifest = "[module]\npath=\"diagnostics::cli\"\n[dependencies]\n\"ecosystem::cli\"=true\n";
     testing::assert_ok(fs::write_file_structured(path::join(directory, "goml.toml"), manifest));
     let mut count = 0;
     for line in source.split("\n") {
@@ -54,7 +59,12 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
             ),
             "format diagnostic fixture",
         );
-        testing::assert(formatted.status().success());
+        if !formatted.status().success() {
+            testing::fail(
+                "format case " + count.to_string() + ": "
+                    + testing::expect_ok(formatted.stderr().to_string_utf8(), "format stderr"),
+            );
+        }
         let output = testing::expect_ok(
             process::Command::new(driver).arg("check").current_dir(directory).output_timeout_structured(
                 time::Duration::from_seconds(60),
