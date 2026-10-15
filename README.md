@@ -222,7 +222,7 @@ capture generated references.
 `schema::[Options]()` returns an ordinary `Command` for validation, help and
 composition. Its generic argument selects the derived schema even though the
 returned command has no type parameter. Generic forwarding and first-class
-schema function values work across dependencies with GoML 0.1.50.
+schema function values work across dependencies.
 `command_for::[Options]()` and the `Args::schema` trait method retain their
 `TypedCommand[Options]` result for compatibility; its `command` field exposes
 the same schema.
