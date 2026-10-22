@@ -1,6 +1,10 @@
 package cli;
 
 impl Argument {
+    pub fn negatable(self: Argument, enabled: bool) -> Argument {
+        Argument { negatable_value: enabled, ..self }
+    }
+
     pub fn alias(self: Argument, value: string) -> Argument {
         Argument { aliases: self.aliases.copy().pushed(value), ..self }
     }

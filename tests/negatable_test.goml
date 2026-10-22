@@ -1,0 +1,85 @@
+package tests;
+
+use ecosystem::cli;
+use cli::{Args};
+use std::testing;
+
+#[derive(Args)]
+struct ColorOptions {
+    #[arg(negatable, default = "true", env = "COLOR", short = "c")]
+    color: bool,
+}
+
+#[test]
+fn negatable_flags_override_fallbacks_and_keep_scalar_duplicate_policy() -> () {
+    let command = cli::command("paint").arg(
+        cli::flag("color").negatable(true).default_value("true").env("COLOR").short('c').alias(
+            "colour",
+        ),
+    );
+    let value = testing::expect_ok(
+        command.parse_with_env(Vec::from_array(["--no-color"]), |_| Option::Some("true")),
+        "negative",
+    );
+    testing::assert(!value.flag("color"));
+    testing::assert(value.was_provided("color"));
+    testing::assert(testing::expect_ok(command.parse(Vec::new()), "default").flag("color"));
+    for arguments in Vec::from_array(
+        [
+            Vec::from_array(["--color", "--no-color"]),
+            Vec::from_array(["--no-color", "--color"]),
+            Vec::from_array(["--no-color", "--no-color"]),
+            Vec::from_array(["-c", "--no-color"]),
+            Vec::from_array(["--no-color=false"]),
+            Vec::from_array(["--no-colour"]),
+        ],
+    ) {
+        testing::assert_err(command.parse(arguments));
+    }
+    testing::assert(
+        !testing::expect_ok(
+            cli::parse_with_env::[ColorOptions](
+                Vec::from_array(["--no-color"]),
+                |_| Option::Some("true"),
+            ),
+            "derived",
+        ).color,
+    );
+    testing::assert_err(
+        cli::command("plain").arg(cli::flag("color")).parse(Vec::from_array(["--no-color"])),
+    );
+    let literal = cli::command("literal").arg(cli::flag("no-color"));
+    testing::assert(
+        testing::expect_ok(literal.parse(Vec::from_array(["--no-color"])), "literal").flag(
+            "no-color",
+        ),
+    );
+}
+
+#[test]
+fn negatable_schema_rejects_conflicts_and_updates_help_and_all_completions() -> () {
+    let flag = cli::flag("color").negatable(true);
+    for command in Vec::from_array(
+        [
+            cli::command("a").arg(flag).arg(cli::flag("no-color")),
+            cli::command("a").arg(cli::flag("no-color")).arg(flag),
+            cli::command("a").arg(flag.alias("no-color")),
+            cli::command("a").arg(cli::argument("color").negatable(true)),
+            cli::command("a").arg(flag.multiple(true)),
+            cli::command("a").arg(flag.global(true)).subcommand(
+                cli::command("child").arg(cli::flag("no-color")),
+            ),
+        ],
+    ) {
+        testing::assert_err(command.parse(Vec::new()));
+    }
+    let command = cli::schema::[ColorOptions]();
+    testing::assert(command.help_text().contains("--color, --no-color"));
+    for shell in Vec::from_array([cli::Shell::Bash, cli::Shell::Zsh, cli::Shell::Fish]) {
+        testing::assert(
+            testing::expect_ok(command.completion_script(shell), "completion").contains(
+                "--no-color",
+            ),
+        );
+    }
+}

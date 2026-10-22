@@ -31,3 +31,4 @@
 ["#[derive(cli::Args)]\nstruct Invalid { #[arg(unknown = r\"value\")] value: string }","unknown CLI argument attribute"]
 ["#[derive(cli::Subcommands)]\nenum Invalid { #[command(unknown = r\"value\")] Item }","unknown subcommand attribute"]
 ["#[derive(cli::Args)]\nstruct Invalid { #[arg(long = \"first\", long = r\"second\")] value: string }","duplicate CLI attribute"]
+["#[derive(cli::Args)]\nstruct Invalid { #[arg(negatable)] value: string }", "CLI negatable requires a boolean field"]

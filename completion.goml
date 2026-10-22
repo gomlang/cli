@@ -47,6 +47,9 @@ fn completion_spellings(argument: Argument) -> Vec[string] {
     for name in argument.aliases.copy().pushed(argument.name) {
         result.push("--" + name);
     }
+    if argument.negatable_value {
+        result.push("--no-" + argument.name);
+    }
     if let Some(short) = argument.short_name {
         result.push("-" + short.to_string());
     }

@@ -40,7 +40,17 @@ fn validate_command(command: Command, depth: isize) -> Result[(), Error] {
             )
         }
         names.set(argument.name, true);
-        for spelling in argument.aliases.copy().pushed(argument.name) {
+        if argument.negatable_value
+            && (argument.action != Action::Flag || argument.position.is_some() || argument.repeated) {
+            return Result::Err(
+                problem(ErrorKind::InvalidSchema, "negatable requires a scalar boolean flag"),
+            );
+        }
+        let option_names = argument.aliases.copy().pushed(argument.name);
+        if argument.negatable_value {
+            option_names.push("no-" + argument.name);
+        }
+        for spelling in option_names {
             if !valid_name(spelling) || spelling == "help" || spelling == "version"
                 || spellings.contains(spelling) {
                 return Result::Err(
@@ -176,7 +186,9 @@ fn validate_command(command: Command, depth: isize) -> Result[(), Error] {
 
 fn long_argument(command: Command, name: string) -> Result[Argument, Error] {
     for argument in command.arguments {
-        if argument.position.is_none() && (argument.name == name || argument.aliases.contains(name)) {
+        if argument.position.is_none()
+            && (argument.name == name || argument.aliases.contains(name)
+                || (argument.negatable_value && name == "no-" + argument.name)) {
             return Result::Ok(argument)
         }
     }
@@ -303,7 +315,12 @@ fn parse_command(
                 if inline.is_some() {
                     return Result::Err(problem(ErrorKind::Usage, f"--{name} takes no value"))
                 }
-                store(matches, argument, "true", true)?;
+                let value = if argument.negatable_value && name == "no-" + argument.name {
+                    "false"
+                } else {
+                    "true"
+                };
+                store(matches, argument, value, true)?;
             }
             continue;
         }

@@ -89,7 +89,7 @@ fn rejected_derive_inputs_report_precise_diagnostics() -> () {
         }
         count += 1;
     }
-    testing::assert_eq(count, 33);
+    testing::assert_eq(count, 34);
 }
 
 fn argument_location(source: string, argument: string) -> string {

@@ -18,6 +18,11 @@ fn display_argument(argument: Argument) -> string {
             None => "    ",
         };
         prefix + "--" + argument.name
+            + if argument.negatable_value {
+                ", --no-" + argument.name
+            } else {
+                ""
+            }
             + if argument.action == Action::Value {
                 " <VALUE>"
             } else {

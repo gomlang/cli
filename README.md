@@ -326,13 +326,13 @@ optional selectors, flattened positional offsets and argument groups, global
 options at multiple command levels, alias canonicalization, help/version
 inheritance and invalid schemas. The `examples/parse` example and its downstream verification check
 exported derives, import aliases and generated-name hygiene;
-A GoML test checks 33 invalid derives through temporary downstream modules, using
+A GoML test checks 34 invalid derives through temporary downstream modules, using
 `std::process` to assert compiler exit status and argument-level diagnostic locations.
 Derives use compiler-provided structured attribute metadata for names, decoded strings
 and source spans; normal strings, raw strings and comments retain their existing
 semantics.
 
-Automatic negated flags and dynamic completion remain future work. Schemas must
+Implicit negative spellings and dynamic completion remain outside the API. Schemas must
 form a finite command tree; recursive type definitions that would expand into an
 infinite command tree are unsupported.
 
@@ -348,3 +348,14 @@ goml test --timeout 300s
 ```
 
 `goml test --timeout 300s` builds the example and runs its tests. `(cd ../workflows && just ecosystem-test cli)` runs the library-specific smoke and compatibility checks.
+
+Opt in to a negative boolean spelling with `flag("color").negatable(true)` or
+`#[arg(negatable)]` on a derived `bool` field. This adds `--no-color`, setting the
+same canonical `color` value to false, and includes it in help and Bash/Zsh/Fish
+completion. Only the canonical long name receives a negative spelling; aliases
+and short options remain positive. Explicit false overrides environment/default
+true and counts as provided for groups, conflicts, and requirements. As with
+ordinary scalar flags, any second occurrence (positive or negative, in either
+order) is an error. Neither spelling accepts `=value`. Schema validation rejects
+negative-name collisions, non-boolean actions, and repeated negatable flags.
+Ordinary flags, including explicitly named `no-*` flags, keep their old behavior.
