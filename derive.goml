@@ -339,15 +339,17 @@ pub fn derive_args(input: DeriveInput) -> DeriveOutput {
             } else {
                 field_type
             };
-            derive_output_add_predicate(
-                output,
-                nested_type,
-                if flatten {
-                    "Args"
-                } else {
-                    "Subcommands"
-                },
-            );
+            if meta_type_contains_generic(input, nested_type) {
+                derive_output_add_predicate(
+                    output,
+                    nested_type,
+                    if flatten {
+                        "Args"
+                    } else {
+                        "Subcommands"
+                    },
+                );
+            }
             let nested = typed_schema_expression(
                 input,
                 schema,
@@ -394,7 +396,9 @@ pub fn derive_args(input: DeriveInput) -> DeriveOutput {
             } else {
                 field_type
             };
-            derive_output_add_predicate(output, value_type, "ArgValue");
+            if meta_type_contains_generic(input, value_type) {
+                derive_output_add_predicate(output, value_type, "ArgValue");
+            }
         }
         let argument = argument_schema(
             input,
